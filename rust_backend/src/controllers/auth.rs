@@ -165,6 +165,19 @@ async fn current(auth: auth::JWT, State(ctx): State<AppContext>) -> Result<Respo
     format::json(CurrentResponse::new(&user))
 }
 
+#[debug_handler]
+pub async fn logout() -> Result<Response> {
+    // Para borrar la cookie, la sobreescribimos con una fecha de expiración pasada
+    let cookie = "token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
+
+    Response::builder()
+        .status(303)
+        .header("Set-Cookie", cookie)
+        .header("HX-Redirect", "/ui/auth/web-login")
+        .body(axum::body::Body::empty())
+        .map_err(|e| Error::string(&e.to_string()))
+}
+
 /// Magic link authentication provides a secure and passwordless way to log in to the application.
 ///
 /// # Flow
@@ -271,4 +284,5 @@ pub fn routes() -> Routes {
         .add("/magic-link", post(magic_link))
         .add("/magic-link/{token}", get(magic_link_verify))
         .add("/resend-verification-mail", post(resend_verification_email))
+        .add("/logout", post(logout))
 }

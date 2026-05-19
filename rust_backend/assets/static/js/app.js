@@ -1,23 +1,30 @@
-// Asegúrate de que vue.global.js se carga ANTES que este archivo
-const { createApp } = Vue;
+// Aseguramos que el HTML esté listo antes de ejecutar Vue
+document.addEventListener('DOMContentLoaded', () => {
 
-createApp({
-    // Definimos delimitadores custom para que no choquen con Tera (Rust)
-    delimiters: ['[[', ']]'],
+    const { createApp } = Vue;
 
-    // Estado inicial
-    data() {
-        return {
-            contador: 0
+    createApp({
+        delimiters: ['[[', ']]'],
+        data() {
+            return {
+                contador: 0,
+                menuAbierto: false
+            }
+        },
+        methods: {
+            incrementar() {
+                this.contador++;
+            }
+        },
+        mounted() {
+            // Si ves esto al recargar la página, Vue arrancó bien
+            console.log("✅ Vue montado correctamente en #vue-test");
+
+            // Escuchamos el evento
+            window.addEventListener('abrir-menu-rust', () => {
+                this.menuAbierto = true;
+                console.log("🎯 2. Evento recibido en Vue: Abriendo panel lateral");
+            });
         }
-    },
-
-    // Acciones y métodos reactivos
-    methods: {
-        incrementar() {
-            // Usamos 'this' para acceder a la variable del estado
-            this.contador++;
-            console.log("Contador incrementado a:", this.contador);
-        }
-    }
-}).mount('#vue-test');
+    }).mount('#vue-test');
+});
