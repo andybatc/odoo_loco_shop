@@ -3,10 +3,11 @@
 {% block title %}Configuración - Odoo Rust Shop{% endblock title %}
 
 {% block content %}
-<div id="shop-app" class="container mx-auto py-10">
+<div id="shop-app" class="container mx-auto py-10"
+     data-products='{{ products | json_encode | safe }}'>
     <h1 class="text-3xl font-bold mb-8">Nuestros Productos</h1>
 
-    {% raw %}
+
     <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
         <div v-for="product in products" :key="product.id"
              class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow">
@@ -25,10 +26,6 @@
             </div>
         </div>
     </div>
-    {% endraw %}
 </div>
-<script>
-    window.__INITIAL_PRODUCTS__ = {{ products | json_encode | safe }};
-</script>
 <script src="/static/js/shop.js"></script>
 {% endblock content %}

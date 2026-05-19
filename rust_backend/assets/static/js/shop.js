@@ -3,12 +3,17 @@ const { createApp } = Vue;
 createApp({
     delimiters: ['[[', ']]'],
     data() {
+        // Obtenemos el elemento donde montamos la app
+        const el = document.getElementById('shop-app');
+
+        // Leemos el JSON del atributo 'data-products'
+        const rawData = el ? el.getAttribute('data-products') : '[]';
+
         return {
-            // Leemos la variable global inyectada por el HTML
-            products: window.__INITIAL_PRODUCTS__ || []
+            products: JSON.parse(rawData)
         }
     },
     mounted() {
-        console.log("Productos cargados en Vue:", this.products);
+        console.log("Productos montados correctamente:", this.products);
     }
 }).mount('#shop-app');
