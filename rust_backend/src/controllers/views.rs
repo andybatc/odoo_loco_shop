@@ -20,7 +20,7 @@ pub struct BaseContext {
     // Aquí puedes añadir más cosas que sean globales (ej. notificaciones)
 }
 
-async fn get_current_user(ctx: &AppContext, cookie_header: Option<String>) -> Option<users::Model> {
+pub async fn get_current_user(ctx: &AppContext, cookie_header: Option<String>) -> Option<users::Model> {
     let cookie_str = cookie_header?;
 
     // 1. Extraer el token

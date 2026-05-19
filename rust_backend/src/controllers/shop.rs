@@ -6,7 +6,9 @@ use loco_rs::prelude::*;
 use sea_orm::{query::*, Database};
 use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
+use axum::http::HeaderMap;
 use crate::models::{self, products};
+use crate::controllers::views::get_current_user;
 
 #[debug_handler]
 pub async fn list(State(_ctx): State<AppContext>) -> Result<Response> {
@@ -27,18 +29,23 @@ pub async fn list(State(_ctx): State<AppContext>) -> Result<Response> {
 }
 pub async fn index(
     ViewEngine(v): ViewEngine<TeraView>,
-    State(ctx): State<AppContext>
+    State(ctx): State<AppContext>,
+    headers: HeaderMap
 ) -> Result<Response> {
 
     // 1. Buscamos los productos
     let products = products::Entity::find().all(&ctx.db).await?;
-    println!("DEBUG: Productos encontrados en DB: {:?}", products.len());
+
+    let cookie_header = headers.get("cookie")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let user = get_current_user(&ctx, cookie_header).await;
     // 3. Pasamos &v como el primer argumento
     format::render().view(
         &v,
         "shop/home.html",
         serde_json::json!({
-            "products": products
+            "products": products,
+            "current_user": user,
         }),
     )
 }
