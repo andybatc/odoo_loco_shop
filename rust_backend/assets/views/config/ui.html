@@ -46,4 +46,31 @@
         </div>
     </div>
 </div>
+{% raw %}
+<div class="p-6 bg-slate-50 flex items-center justify-center min-h-[200px]">
+    <div id="vue-test"
+         class="bg-white p-8 rounded-2xl shadow-xl border border-slate-100 flex flex-col items-center gap-6 w-full max-w-sm transition-all hover:shadow-2xl">
+
+        <h2 class="text-xl font-semibold text-slate-800 tracking-tight">Panel de Control Reactivo</h2>
+
+        <div class="flex items-center gap-4 bg-slate-100 px-6 py-3 rounded-full border border-slate-200">
+            <span class="text-slate-500 font-medium">Contador actual:</span>
+            <span class="text-4xl font-mono font-bold text-blue-600 tabular-nums">
+                [[ contador ]]
+            </span>
+        </div>
+
+        <button @click="incrementar"
+                class="w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-xl shadow-md hover:bg-blue-700 active:bg-blue-800 active:scale-[0.98] transition-all duration-150 flex items-center justify-center gap-2 group">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 group-hover:rotate-90 transition-transform"
+                 fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+            </svg>
+            Aumentar Valor
+        </button>
+        <p class="text-xs text-slate-400 text-center">Este componente es gestionado por Vue 3 en modo estático.</p>
+    </div>
+</div>
+{% endraw %}
+<script src="/static/js/app.js"></script>
 {% endblock content %}

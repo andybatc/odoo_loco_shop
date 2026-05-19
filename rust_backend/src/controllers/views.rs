@@ -160,7 +160,8 @@ pub async fn render_ui(
         "config/ui.html",
         serde_json::json!({
             "current_user": user,
-            "current_token": token_value
+            "current_token": token_value,
+            "mensaje": "Vue está funcionando"
         }),
     )
 }
