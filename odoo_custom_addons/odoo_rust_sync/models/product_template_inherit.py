@@ -1,4 +1,5 @@
 from odoo import models, fields, api
+from odoo.exceptions import UserError
 import requests
 import logging
 
@@ -38,6 +39,18 @@ class ProductTemplate(models.Model):
                 record._send_rust_webhook()
         return res
 
+    def _to_rust_payload(self):
+        """ Devuelve el diccionario formateado listo para el webhook """
+        name_field = self.name
+        product_name = name_field.get('es_ES') or name_field.get('en_US') or list(name_field.values())[0] if isinstance(
+            name_field, dict) else name_field
+        return {
+            "odoo_id": self.id,
+            "name": product_name or "Sin nombre",
+            "price": float(self.list_price),
+            "image_base64": self.image_1920.decode('utf-8') if self.image_1920 else None
+        }
+
     def _send_rust_webhook(self):
         token = self.env['ir.config_parameter'].sudo().get_param('rust_api.webhook_token')
         if not token:
@@ -50,18 +63,7 @@ class ProductTemplate(models.Model):
             "Content-Type": "application/json"
         }
 
-        # Tratamiento del nombre (Odoo 18 usa traducción multilingüe en JSON/dict)
-        name_field = self.name
-        product_name = name_field.get('es_ES') or name_field.get('en_US') or list(name_field.values())[0] if isinstance(
-            name_field, dict) else name_field
-
-        # 🚀 Armamos el payload con la información completa del producto
-        payload = {
-            "odoo_id": self.id,
-            "name": product_name or "Sin nombre",
-            "price": float(self.list_price),
-            "image_base64": self.image_1920.decode('utf-8') if self.image_1920 else None
-        }
+        payload = self._to_rust_payload()
 
         _logger.info("🚀 [WEBHOOK ODOO] Datos preparados para enviar -> ID: %s, Name: %s, Price: %s",
                      payload['odoo_id'], payload['name'], payload['price'])
@@ -75,3 +77,40 @@ class ProductTemplate(models.Model):
                 _logger.error("❌ Fallo de conexión tardía con Rust Backend: %s", str(e))
 
         self.env.cr.postcommit.add(send_after_commit)
+
+    def action_bulk_sync_to_rust(self):
+        """ Envía en lote los productos seleccionados al backend de Rust """
+        token = self.env['ir.config_parameter'].sudo().get_param('rust_api.webhook_token')
+        if not token:
+            raise UserError("⚠️ El token 'rust_api.webhook_token' no está configurado en los Parámetros del Sistema.")
+
+        url = "http://127.0.0.1:5150/api/webhooks/odoo/bulk-update"
+
+        # 'self' aquí ya contiene automáticamente todos los registros seleccionados en la lista
+        batch_products = [rec._to_rust_payload() for rec in self]
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json"
+        }
+
+        try:
+            response = requests.post(url, json=batch_products, headers=headers, timeout=15)
+
+            if response.status_code == 200:
+                # Devolvemos la notificación flotante para que la UI de Odoo la dibuje
+                return {
+                    'type': 'ir.actions.client',
+                    'tag': 'display_notification',
+                    'params': {
+                        'title': 'Sincronización en proceso',
+                        'message': f'Se enviaron {len(batch_products)} productos exitosamente a la tienda.',
+                        'type': 'success',
+                        'sticky': False,
+                    }
+                }
+            else:
+                raise UserError(f"El backend de Rust respondió con código de error: {response.status_code}")
+
+        except Exception as e:
+            raise UserError(f"❌ Fallo crítico de conexión con Rust Backend: {str(e)}")
