@@ -14,6 +14,11 @@ use migration::Migrator;
 use std::path::Path;
 use loco_rs::controller::views::{engines::TeraView, ViewEngine};
 use axum::{Extension, Router};
+use axum::routing::get_service;
+use loco_rs::prelude::*;
+use tower_http::services::ServeDir;
+use loco_rs::controller::Routes;
+use std::env;
 
 #[allow(unused_imports)]
 use crate::{controllers, models::_entities::users, tasks, workers::downloader::DownloadWorker};
@@ -57,11 +62,16 @@ impl Hooks for App {
             .add_route(controllers::auth::routes())
     }
     async fn after_routes(router: Router, _ctx: &AppContext) -> Result<Router> {
-        // 1. Construimos el motor Tera
-        let tera_engine = TeraView::build()?;
+        // 1. Construimos la ruta absoluta hacia tus imágenes
+        let root = std::env::current_dir().expect("No se pudo obtener el directorio actual");
+        let storage_path = root.join("storage/products");
 
-        // 2. Lo inyectamos como una Extension dentro de una Layer
-        // Esto es lo que el controlador espera encontrar
+        // 2. Usamos nest_service directamente en el router final
+        let router = router.nest_service("/storage/products", ServeDir::new(storage_path));
+
+        // 3. Construimos el motor Tera
+        let tera_engine = TeraView::build()?;
+        
         Ok(router.layer(Extension(ViewEngine::new(tera_engine))))
     }
     async fn connect_workers(ctx: &AppContext, queue: &Queue) -> Result<()> {

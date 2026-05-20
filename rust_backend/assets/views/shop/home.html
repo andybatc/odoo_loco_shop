@@ -12,7 +12,8 @@
         <div v-for="product in products" :key="product.id"
              class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow">
 
-            <img :src="product.image_url" class="h-48 w-full object-cover">
+            <img :src="'/storage/products/' + product.image_filename"
+                 class="h-48 w-full object-cover">
 
             <div class="p-4">
                 <h2 class="text-lg font-bold text-gray-800">[[ product.name ]]</h2>
