@@ -17,6 +17,7 @@ pub struct Model {
     pub price: Option<Decimal>,
     #[sea_orm(column_type = "Float", nullable)]
     pub stock: Option<f32>,
+    pub image_filename: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
