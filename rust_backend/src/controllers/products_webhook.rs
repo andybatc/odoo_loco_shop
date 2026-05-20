@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use crate::workers::webhook::{WebhookWorker, WebhookWorkerArgs};
 use crate::models::configs;
 use tower::{buffer::BufferLayer, limit::RateLimitLayer, ServiceBuilder};
-use tower_http::services::ServeDir;
 use std::time::Duration;
 use axum::{
     error_handling::HandleErrorLayer,

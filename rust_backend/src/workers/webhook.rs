@@ -1,8 +1,11 @@
-use serde::{Deserialize, Serialize};
-use loco_rs::prelude::*;
-use sea_orm::{Database, Set};
 use crate::models::_entities::products;
+use loco_rs::prelude::*;
+use sea_orm::{Set,ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::prelude::Decimal;
+use serde::{Deserialize, Serialize};
 use std::time::Duration;
+use base64::{Engine as _, engine::general_purpose};
+
 pub struct WebhookWorker {
     pub ctx: AppContext,
 }
@@ -10,6 +13,9 @@ pub struct WebhookWorker {
 #[derive(Deserialize, Debug, Serialize)]
 pub struct WebhookWorkerArgs {
     pub odoo_id: i32,
+    pub name: Option<String>,
+    pub price: Option<Decimal>,
+    pub image_base64: Option<String>,
 }
 
 #[async_trait]
@@ -24,65 +30,110 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
 
     async fn perform(&self, args: WebhookWorkerArgs) -> Result<()> {
         tokio::time::sleep(Duration::from_millis(500)).await;
-        let odoo_uri = "postgres://odoo:postgres@localhost:5432/odoo_prod";
-        let odoo_db = Database::connect(odoo_uri).await
-            .map_err(|e| Error::wrap(e))?;
+        tracing::info!("📦 Procesando webhook local para Odoo ID: {}", args.odoo_id);
 
-        // 2. Traer datos frescos de Odoo
-        use crate::models::product_template_odoo;
-        let odoo_item = product_template_odoo::Entity::find_by_id(args.odoo_id)
-            .one(&odoo_db)
-            .await
-            .map_err(|e| Error::wrap(e))?;
+        // =========================================================
+        // DECODIFICAR Y GUARDAR IMAGEN EN DISCO (Si viene en el payload)
+        // =========================================================
+        let mut guardado_image_filename: Option<String> = None;
 
-        if let Some(item) = odoo_item {
-            // LÓGICA ODOO 18: El nombre es un JSONB {"es_ES": "Nombre", "en_US": "Name"}
-            // Intentamos obtener español, luego inglés, luego cualquier valor, o "Sin nombre"
-            let product_name = item.name
-                .get("es_ES")
-                .or_else(|| item.name.get("en_US"))
-                .or_else(|| item.name.as_object().and_then(|obj| obj.values().next()))
-                .and_then(|v| v.as_str())
-                .unwrap_or("Sin nombre");
-
-            // 4. Buscar en la base de datos local de la tienda (Rust)
-            let local_product = products::Entity::find()
-                .filter(products::Column::OdooId.eq(item.id))
-                .one(&self.ctx.db)
-                .await?;
-
-            match local_product {
-                Some(existing_product) => {
-                    println!("🔄 Actualizando producto: {} (Odoo ID: {})", product_name, item.id);
-
-                    let mut active_model: products::ActiveModel = existing_product.into();
-
-                    // Solo actualizamos si el nombre extraído es válido
-                    if product_name != "Sin nombre" {
-                        active_model.name = Set(Some(product_name.to_string()));
+        if let Some(ref b64_str) = args.image_base64 {
+            if !b64_str.is_empty() {
+                // Decodificamos el string base64 de vuelta a bytes binarios (Vec<u8>)
+                if let Ok(image_bytes) = general_purpose::STANDARD.decode(b64_str) {
+                    let storage_dir = std::path::Path::new("storage/products");
+                    if !storage_dir.exists() {
+                        let _ = tokio::fs::create_dir_all(storage_dir).await;
                     }
 
-                    active_model.price = Set(item.list_price);
-                    active_model.update(&self.ctx.db).await?;
-                }
-                None => {
-                    println!("✨ Creando nuevo producto: {} (Odoo ID: {})", product_name, item.id);
+                    let file_name = format!("{}.webp", uuid::Uuid::new_v4());
+                    let file_path = storage_dir.join(&file_name);
 
-                    let new_product = products::ActiveModel {
-                        name: Set(Some(product_name.to_string())),
-                        price: Set(item.list_price),
-                        odoo_id: Set(Some(item.id)),
-                        ..Default::default()
-                    };
-
-                    new_product.insert(&self.ctx.db).await?;
+                    if let Ok(_) = tokio::fs::write(file_path, image_bytes).await {
+                        tracing::info!("💾 Imagen guardada localmente desde Webhook: {}", file_name);
+                        guardado_image_filename = Some(file_name);
+                    } else {
+                        tracing::error!("❌ Error escribiendo los bytes de la imagen en disco");
+                    }
+                } else {
+                    tracing::error!("❌ No se pudieron decodificar los bytes base64 de la imagen");
                 }
             }
-
-            println!("✅ Sincronización exitosa para ID: {}", item.id);
-        } else {
-            println!("⚠️ No se encontró el producto con ID {} en la base de datos de Odoo", args.odoo_id);
         }
+        // =========================================================
+
+        // 4. Buscar en la base de datos local de la tienda por 'odoo_id'
+        let local_product = products::Entity::find()
+            .filter(products::Column::OdooId.eq(Some(args.odoo_id)))
+            .one(&self.ctx.db)
+            .await
+            .map_err(|e| loco_rs::Error::msg(e))?;
+
+        match local_product {
+            // CASO A: El producto existe -> Actualizar campos de forma defensiva
+            Some(existing_product) => {
+                tracing::info!("🔄 Producto encontrado en tienda. Evaluando cambios para ID Odoo: {}", args.odoo_id);
+
+                // 🔍 DIAGNÓSTICO: Ver exactamente qué llegó en el payload estructurado
+                tracing::info!("📥 PAYLOAD RECIBIDO EN WORKER -> Name: {:?}, Price: {:?}", args.name, args.price);
+
+                let mut active_model: products::ActiveModel = existing_product.into();
+                let mut hubo_cambios = false;
+
+                // 🛡️ Solo modificamos el nombre si el webhook trae un texto válido
+                if let Some(name) = args.name {
+                    if !name.is_empty() && name != "Sin nombre" {
+                        tracing::info!("✍️ Modificando campo 'name' a: {}", name);
+                        active_model.name = Set(Some(name));
+                        hubo_cambios = true;
+                    }
+                }
+
+                // 🛡️ Solo modificamos el precio si viene en el payload
+                if let Some(price) = args.price {
+                    tracing::info!("✍️ Modificando campo 'price' a: {}", price);
+                    active_model.price = Set(Some(price));
+                    hubo_cambios = true;
+                }
+
+                // 🛡️ Solo modificamos la imagen si realmente se guardó un archivo nuevo
+                if let Some(img_file) = guardado_image_filename {
+                    tracing::info!("✍️ Modificando campo 'image_filename' a: {}", img_file);
+                    active_model.image_filename = Set(Some(img_file));
+                    hubo_cambios = true;
+                }
+
+                if hubo_cambios {
+                    active_model.updated_at = Set(chrono::Utc::now().into());
+                    active_model.update(&self.ctx.db)
+                        .await
+                        .map_err(|e| loco_rs::Error::msg(e))?;
+                    tracing::info!("💾 ¡Cambios guardados en la Base de Datos!");
+                } else {
+                    tracing::warn!("⚠️ No se detectaron cambios reales en los campos. Se omitió el UPDATE.");
+                }
+            }
+            // CASO B: El producto no existe -> Crear uno nuevo desde cero
+            None => {
+                tracing::info!("✨ Producto nuevo. Insertando en la tienda para ID Odoo: {}", args.odoo_id);
+
+                let new_product = products::ActiveModel {
+                    odoo_id: Set(Some(args.odoo_id)),
+                    name: Set(args.name.or(Some("Producto sin nombre".to_string()))),
+                    price: Set(args.price),
+                    image_filename: Set(guardado_image_filename),
+                    created_at: Set(chrono::Utc::now().into()),
+                    updated_at: Set(chrono::Utc::now().into()),
+                    ..Default::default()
+                };
+
+                new_product.insert(&self.ctx.db)
+                    .await
+                    .map_err(|e| loco_rs::Error::msg(e))?;
+            }
+        }
+
+        tracing::info!("✅ Sincronización finalizada localmente para ID Odoo: {}", args.odoo_id);
         Ok(())
     }
 }

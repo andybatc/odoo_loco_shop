@@ -17,7 +17,7 @@ loco-rs = { workspace = true  }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 tokio = { version = "1.45", default-features = false, features = [
-  "rt-multi-thread",
+  "rt-multi-thread","fs"
 ] }
 async-trait = { version = "0.1" }
 axum = { version = "0.8" }
@@ -37,6 +37,7 @@ uuid = { version = "1.6", features = ["v4"] }
 include_dir = { version = "0.7" }
 tower = { version = "0.5.3", features = ["buffer", "limit"] }
 tower-http = { version = "0.6.10", features = ["util"] }
+base64 = "0.22.1"
 
 [[bin]]
 name = "odoo_shop-cli"

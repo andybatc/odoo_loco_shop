@@ -7,7 +7,7 @@ use sea_orm::{query::*, Database};
 use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use axum::http::HeaderMap;
-use crate::models::{self, products};
+use crate::models::{products};
 use crate::controllers::views::get_current_user;
 
 #[debug_handler]
