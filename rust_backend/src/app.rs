@@ -49,6 +49,7 @@ impl Hooks for App {
 
     fn routes(_ctx: &AppContext) -> AppRoutes {
         AppRoutes::with_default_routes() // controller routes below
+            .add_route(controllers::token_auth::routes())
             .add_route(controllers::views::routes())
             .add_route(controllers::config::routes())
             .add_route(controllers::products_webhook::routes())

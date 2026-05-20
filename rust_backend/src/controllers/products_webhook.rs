@@ -5,6 +5,7 @@ use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use crate::workers::webhook::{WebhookWorker, WebhookWorkerArgs};
 use crate::models::configs;
+use crate::controllers::token_auth::AuthToken;
 use tower::{buffer::BufferLayer, limit::RateLimitLayer, ServiceBuilder};
 use std::time::Duration;
 use axum::{
@@ -35,33 +36,29 @@ async fn handle_rate_limit_error(err: BoxError) -> (StatusCode, String) {
 }
 
 #[axum::debug_handler]
-async fn update(
+pub async fn update(
     State(ctx): State<AppContext>,
-    headers: HeaderMap,
+    _: AuthToken, // 👈 Se autentica automáticamente antes de entrar aquí
     Json(args): Json<WebhookWorkerArgs>
 ) -> Result<Response> {
-    let auth_header = headers.get("Authorization")
-        .and_then(|h| h.to_str().ok())
-        .and_then(|h| h.strip_prefix("Bearer "))
-        .ok_or_else(|| Error::Unauthorized("Token faltante".to_string()))?;
-
-    // 2. Buscar el token en la tabla 'configs'
-    use crate::models::_entities::configs::Column as ConfigColumn;
-
-    let config = configs::Configs::find()
-        .filter(ConfigColumn::Key.eq("webhook_token"))
-        .one(&ctx.db)
-        .await?
-        .ok_or_else(|| Error::NotFound)?;
-
-    // 3. Comparar
-    if config.value.as_deref() != Some(auth_header) {
-        return Err(Error::Unauthorized("Token inválido".to_string()));
-    }
-    // Loco maneja todo el encolado (queue, serialización, etc.) con perform_later
+    // Si llega aquí, el token es válido. ¡Ni una línea de código extra!
     WebhookWorker::perform_later(&ctx, args).await?;
 
     format::json::<()>(())
+}
+
+pub async fn update_bulk(
+    State(ctx): State<AppContext>,
+    _: AuthToken,
+    Json(args_list): Json<Vec<WebhookWorkerArgs>> // args_list es propiedad de esta función
+) -> Result<Response> {
+
+    for args in args_list {
+        // Ahora 'args' es de tipo 'WebhookWorkerArgs' (owned), no '&WebhookWorkerArgs'
+        WebhookWorker::perform_later(&ctx, args).await?;
+    }
+
+    format::json(serde_json::json!({"status": "success"}))
 }
 
 pub fn routes() -> Routes {
@@ -75,5 +72,6 @@ pub fn routes() -> Routes {
     Routes::new()
         .prefix("api/webhooks/odoo")
         .add("/update", post(update))
+        .add("/bulk-update", post(update_bulk))
         .layer(middleware)
 }
