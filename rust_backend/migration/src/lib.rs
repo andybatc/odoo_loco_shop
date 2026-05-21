@@ -7,6 +7,7 @@ mod m20260506_184955_products;
 mod m20260506_194459_add_unique_to_odoo_id;
 mod m20260507_200140_configs;
 mod m20260520_153037_add_image_to_products;
+mod m20260521_162612_add_published;
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -18,6 +19,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260506_194459_add_unique_to_odoo_id::Migration),
             Box::new(m20260507_200140_configs::Migration),
             Box::new(m20260520_153037_add_image_to_products::Migration),
+            Box::new(m20260521_162612_add_published::Migration),
             // inject-above (do not remove this comment)
         ]
     }

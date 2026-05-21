@@ -18,6 +18,7 @@ pub struct Model {
     #[sea_orm(column_type = "Float", nullable)]
     pub stock: Option<f32>,
     pub image_filename: Option<String>,
+    pub is_published: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
