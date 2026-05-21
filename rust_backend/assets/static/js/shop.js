@@ -13,6 +13,11 @@ createApp({
             products: JSON.parse(rawData)
         }
     },
+    methods: {
+        handleImageError(event) {
+            event.target.src = '/static/images/No image avaible.jpeg';
+        }
+    },
     mounted() {
         console.log("Productos montados correctamente:", this.products);
     }

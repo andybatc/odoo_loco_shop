@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Configuración - Odoo Rust Shop{% endblock title %}
+{% block title %}Shop Catalog{% endblock title %}
 
 {% block content %}
 <div id="shop-app" class="container mx-auto py-10"
@@ -12,8 +12,16 @@
         <div v-for="product in products" :key="product.id"
              class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow">
 
-            <img :src="'/storage/products/' + product.image_filename"
-                 class="h-48 w-full object-cover">
+            <img v-if="!product.image_filename"
+                 src="/static/images/No image avaible.jpeg"
+                 class="h-48 w-full object-contain hover:bg-slate-800"
+                 alt="Sin imagen">
+
+            <img v-else
+                 :src="'/storage/products/' + product.image_filename"
+                 @error="handleImageError"
+                 class="h-48 w-full object-contain hover:bg-slate-800"
+                 alt="Product">
 
             <div class="p-4">
                 <h2 class="text-lg font-bold text-gray-800">[[ product.name ]]</h2>
