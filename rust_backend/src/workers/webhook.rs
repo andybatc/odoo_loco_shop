@@ -16,6 +16,7 @@ pub struct WebhookWorkerArgs {
     pub name: Option<String>,
     pub price: Option<Decimal>,
     pub image_base64: Option<String>,
+    pub is_published: bool,
 }
 
 #[async_trait]
@@ -77,7 +78,7 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                 // 🔍 DIAGNÓSTICO: Ver exactamente qué llegó en el payload estructurado
                 tracing::info!("📥 PAYLOAD RECIBIDO EN WORKER -> Name: {:?}, Price: {:?}", args.name, args.price);
 
-                let mut active_model: products::ActiveModel = existing_product.into();
+                let mut active_model: products::ActiveModel = existing_product.clone().into();
                 let mut hubo_cambios = false;
 
                 // 🛡️ Solo modificamos el nombre si el webhook trae un texto válido
@@ -103,6 +104,12 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                     hubo_cambios = true;
                 }
 
+                if existing_product.is_published != args.is_published {
+                    tracing::info!("✍️ Actualizando 'is_published' a: {}", args.is_published);
+                    active_model.is_published = Set(args.is_published);
+                    hubo_cambios = true;
+                }
+
                 if hubo_cambios {
                     active_model.updated_at = Set(chrono::Utc::now().into());
                     active_model.update(&self.ctx.db)
@@ -122,6 +129,7 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                     name: Set(args.name.or(Some("Producto sin nombre".to_string()))),
                     price: Set(args.price),
                     image_filename: Set(guardado_image_filename),
+                    is_published:Set(args.is_published),
                     created_at: Set(chrono::Utc::now().into()),
                     updated_at: Set(chrono::Utc::now().into()),
                     ..Default::default()

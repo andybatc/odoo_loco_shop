@@ -3,11 +3,11 @@
 #![allow(clippy::unused_async)]
 use crate::models::product_template_odoo::{self};
 use loco_rs::prelude::*;
-use sea_orm::{query::*, Database};
+use sea_orm::{query::*, Database,ColumnTrait, QueryFilter};
 use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use axum::http::HeaderMap;
-use crate::models::{products};
+use crate::models::_entities::products;
 use crate::controllers::views::get_current_user;
 
 #[debug_handler]
@@ -34,7 +34,10 @@ pub async fn index(
 ) -> Result<Response> {
 
     // 1. Buscamos los productos
-    let products = products::Entity::find().all(&ctx.db).await?;
+    let products = products::Entity::find()
+        .filter(products::Column::IsPublished.eq(true))
+        .all(&ctx.db)
+        .await?;
 
     let cookie_header = headers.get("cookie")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));

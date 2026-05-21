@@ -33,6 +33,7 @@ class ProductTemplate(models.Model):
             'default_code',
             'standard_price',
             "image_1920",
+            "is_published"
         ]
         if any(f in vals for f in sync_fields):
             for record in self:
@@ -48,7 +49,8 @@ class ProductTemplate(models.Model):
             "odoo_id": self.id,
             "name": product_name or "Sin nombre",
             "price": float(self.list_price),
-            "image_base64": self.image_1920.decode('utf-8') if self.image_1920 else None
+            "image_base64": self.image_1920.decode('utf-8') if self.image_1920 else None,
+            "is_published": self.is_published
         }
 
     def _send_rust_webhook(self):
