@@ -106,3 +106,8 @@ auth:
     secret: icRZqdEiOCva4vJ2dehb
     # Token expiration time in seconds
     expiration: 604800 # 7 days
+
+cache:
+  kind: InMem
+  uri: "redis://127.0.0.1:6379"
+  max_size: 10 # Número máximo de conexiones simultáneas en el pool de la caché

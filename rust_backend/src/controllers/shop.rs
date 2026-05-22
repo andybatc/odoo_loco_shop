@@ -32,17 +32,30 @@ pub async fn index(
     State(ctx): State<AppContext>,
     headers: HeaderMap
 ) -> Result<Response> {
+    let cache_key = "products:all";
 
-    // 1. Buscamos los productos
-    let products = products::Entity::find()
-        .filter(products::Column::IsPublished.eq(true))
-        .all(&ctx.db)
-        .await?;
+    let products = match ctx.cache.get::<Vec<products::Model>>(cache_key).await {
+        Ok(Some(cached_products)) => {
+            tracing::info!("⚡ Hit de Caché: Catálogo cargado desde Redis");
+            cached_products
+        }
+        _ => {
+            tracing::info!("🐢 Cache Miss: Cargando catálogo desde Postgres...");
+            let db_products = products::Entity::find()
+                .filter(products::Column::IsPublished.eq(true))
+                .all(&ctx.db)
+                .await?;
+
+            let _ = ctx.cache.insert(cache_key, &db_products).await;
+
+            db_products
+        }
+    };
 
     let cookie_header = headers.get("cookie")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
-    // 3. Pasamos &v como el primer argumento
+
     format::render().view(
         &v,
         "shop/home.html",

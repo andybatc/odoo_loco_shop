@@ -38,10 +38,9 @@ async fn handle_rate_limit_error(err: BoxError) -> (StatusCode, String) {
 #[axum::debug_handler]
 pub async fn update(
     State(ctx): State<AppContext>,
-    _: AuthToken, // 👈 Se autentica automáticamente antes de entrar aquí
+    _: AuthToken,
     Json(args): Json<WebhookWorkerArgs>
 ) -> Result<Response> {
-    // Si llega aquí, el token es válido. ¡Ni una línea de código extra!
     WebhookWorker::perform_later(&ctx, args).await?;
 
     format::json::<()>(())
@@ -50,11 +49,10 @@ pub async fn update(
 pub async fn update_bulk(
     State(ctx): State<AppContext>,
     _: AuthToken,
-    Json(args_list): Json<Vec<WebhookWorkerArgs>> // args_list es propiedad de esta función
+    Json(args_list): Json<Vec<WebhookWorkerArgs>>
 ) -> Result<Response> {
 
     for args in args_list {
-        // Ahora 'args' es de tipo 'WebhookWorkerArgs' (owned), no '&WebhookWorkerArgs'
         WebhookWorker::perform_later(&ctx, args).await?;
     }
 
