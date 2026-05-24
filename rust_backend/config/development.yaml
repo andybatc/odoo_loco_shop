@@ -87,7 +87,7 @@ database:
   # Minimum number of connections for a pool.
   min_connections: {{ get_env(name="DB_MIN_CONNECTIONS", default="1") }}
   # Maximum number of connections for a pool.
-  max_connections: {{ get_env(name="DB_MAX_CONNECTIONS", default="1") }}
+  max_connections: 500
   # Run migration up when application loaded
   auto_migrate: true
   # Truncate database when application loaded. This is a dangerous operation, make sure that you using this flag only on dev environments or test mode
@@ -110,4 +110,4 @@ auth:
 cache:
   kind: Redis
   uri: "redis://127.0.0.1:6379"
-  max_size: 10 # Número máximo de conexiones simultáneas en el pool de la caché
+  max_size: 500
