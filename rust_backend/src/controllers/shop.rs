@@ -43,6 +43,7 @@ pub async fn index(
             tracing::info!("🐢 Cache Miss: Cargando catálogo desde Postgres...");
             let db_products = products::Entity::find()
                 .filter(products::Column::IsPublished.eq(true))
+                .order_by_asc(products::Column::Name)
                 .all(&ctx.db)
                 .await?;
 
