@@ -48,13 +48,18 @@
                 <p class="text-gray-600 text-sm mt-1">[[ product.description ]]</p>
                 <div class="mt-4 flex justify-between items-center">
                     <span class="text-blue-600 font-bold text-xl">$[[ product.price ]]</span>
-                    <button class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-800">
-                        Añadir
+                    <button
+                            @click="addToCart(product.id)"
+                            :disabled="addingToCart === product.id"
+                            class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <span v-if="addingToCart === product.id">Añadiendo...</span>
+                        <span v-else>Añadir</span>
                     </button>
                 </div>
             </div>
         </div>
     </div>
 </div>
-<script src="/static/js/shop.js?v=2"></script>
+<script src="/static/js/shop.js?v=3.2"></script>
 {% endblock content %}
