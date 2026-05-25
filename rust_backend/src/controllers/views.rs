@@ -3,7 +3,7 @@
 #![allow(clippy::unused_async)]
 use crate::controllers::auth as auth_controller;
 use crate::controllers::config::TokenForm;
-use crate::models::_entities::{configs, users};
+use crate::models::_entities::{configs, users, cart_items, carts, products};
 use crate::models::users::LoginParams;
 use crate::views::auth::LoginResponse;
 use axum::http::HeaderMap;
@@ -13,11 +13,22 @@ use loco_rs::controller::views::ViewEngine;
 use loco_rs::prelude::Json;
 use loco_rs::prelude::*;
 use serde::Serialize;
+use axum_extra::extract::cookie::CookieJar;
 
 #[derive(Serialize)]
 pub struct BaseContext {
     pub current_user: Option<users::Model>,
     // Aquí puedes añadir más cosas que sean globales (ej. notificaciones)
+}
+
+#[derive(serde::Serialize)]
+pub struct CartItemRender {
+    pub id: i32,
+    pub name: String,
+    pub price: f64,
+    pub quantity: i32,
+    pub subtotal: f64,
+    pub image_filename: Option<String>,
 }
 
 pub async fn get_current_user(ctx: &AppContext, cookie_header: Option<String>) -> Option<users::Model> {
@@ -166,6 +177,80 @@ pub async fn render_ui(
     )
 }
 
+pub async fn cart_display(
+    State(ctx): State<AppContext>,
+    jar: CookieJar,
+    ViewEngine(v): ViewEngine<TeraView>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    let cookie_name = "rsv_cart_session";
+    let mut render_items = Vec::new();
+    let mut grand_total = 0.0;
+    let cookie_header = headers
+        .get("cookie")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let user = get_current_user(&ctx, cookie_header).await;
+
+    // 1. Intentar recuperar el carrito mediante la cookie de sesión
+    if let Some(cookie) = jar.get(cookie_name) {
+        if let Ok(cart_uuid) = Uuid::parse_str(cookie.value()) {
+
+            // 2. Obtener todos los ítems vinculados a este carrito
+            let items = cart_items::Entity::find()
+                .filter(cart_items::Column::CartId.eq(cart_uuid))
+                .all(&ctx.db)
+                .await?;
+
+            if !items.is_empty() {
+                let mut product_ids = Vec::new();
+                let mut item_quantities = std::collections::HashMap::new();
+
+                // 3. Revertir el padding del UUID para obtener los IDs numéricos (i32) de Odoo
+                for item in items {
+                    let hex_str = item.product_id.simple().to_string();
+                    if let Ok(prod_id) = i32::from_str_radix(&hex_str, 16) {
+                        product_ids.push(prod_id);
+                        item_quantities.insert(prod_id, item.quantity);
+                    }
+                }
+
+                // 4. Buscar los productos en la base de datos de una sola consulta
+                let db_products = products::Entity::find()
+                    .filter(products::Column::Id.is_in(product_ids))
+                    .all(&ctx.db)
+                    .await?;
+
+                // 5. Armar el contexto listo para la vista
+                for prod in db_products {
+                    let qty = *item_quantities.get(&prod.id).unwrap_or(&1);
+                    let price_f64 = prod.price.map(|p| p.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0);
+                    let subtotal = price_f64 * (qty as f64);
+                    grand_total += subtotal;
+
+                    render_items.push(CartItemRender {
+                        id: prod.id,
+                        name: prod.name.unwrap_or_else(|| "Producto sin nombre".to_string()),
+                        price: price_f64,
+                        quantity: qty,
+                        subtotal,
+                        image_filename: prod.image_filename,
+                    });
+                }
+            }
+        }
+    }
+
+    format::render().view(
+        &v,
+        "shop/cart.html",
+        &serde_json::json!({
+            "items": render_items,
+            "total": grand_total,
+            "current_user": user,
+        }),
+    )
+}
+
 async fn handle_ui_update(
     State(ctx): State<AppContext>,
     // Usamos Form en lugar de Json para capturar el envío del navegador
@@ -202,6 +287,7 @@ async fn handle_ui_update(
 
 pub fn routes() -> Routes {
     Routes::new()
+        .add("/cart", get(cart_display))
         // Grupo para Autenticación Web
         // URL Resultante: /api/ui/auth/web-login
         .prefix("ui/auth")

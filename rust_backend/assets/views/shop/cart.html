@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+
+{% block title %}Tu Carrito{% endblock title %}
+
+{% block content %}
+<div id="cart-app" class="container mx-auto py-10 px-4"
+     data-items='{{ items | json_encode | safe }}'
+     data-total='{{ total }}'>
+
+    <div class="flex items-center justify-between mb-8 border-b border-gray-200 pb-4">
+        <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-2">
+            <svg class="w-8 h-8 text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M16 11V7a4 4 0 00-8 0v4M5 9h14l1 12H4L5 9z"></path>
+            </svg>
+            Tu Carrito de Compras
+        </h1>
+        <a href="/" class="text-sm text-blue-600 hover:underline flex items-center gap-1">
+            &larr; Volver a la tienda
+        </a>
+    </div>
+
+    <div v-if="items.length === 0" class="text-center py-20 text-gray-500 bg-white rounded-xl shadow-sm border border-gray-100 max-w-md mx-auto">
+        <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 0a2 2 0 110 4 2 2 0 010-4z"></path>
+        </svg>
+        <p class="text-xl font-medium">Tu carrito está vacío</p>
+        <p class="text-sm text-gray-400 mt-1">Añade productos desde el catálogo para verlos aquí.</p>
+        <a href="/" class="mt-6 inline-block bg-slate-900 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors">
+            Explorar Productos
+        </a>
+    </div>
+
+    <div v-else class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        <div class="lg:col-span-2 space-y-4">
+            <div v-for="item in items" :key="item.id"
+                 class="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center gap-4 transition-all hover:shadow-md">
+
+                <div class="w-20 h-20 bg-gray-50 rounded-lg overflow-hidden flex-shrink-0 flex items-center justify-center border border-gray-100">
+                    <img v-if="!item.image_filename"
+                         src="/static/images/No image avaible.jpeg"
+                         class="w-full h-full object-contain"
+                         alt="Sin imagen">
+                    <img v-else
+                         :src="'/storage/products/' + item.image_filename"
+                         @error="handleImageError"
+                         class="w-full h-full object-contain"
+                         :alt="item.name">
+                </div>
+
+                <div class="flex-1 min-w-0">
+                    <h2 class="text-base font-bold text-gray-800 truncate">[[ item.name ]]</h2>
+                    <p class="text-sm text-gray-500 mt-0.5">$[[ item.price ]] c/u</p>
+                </div>
+
+                <div class="flex flex-col items-end justify-between h-20 py-1">
+                    <span class="text-xs bg-slate-100 text-slate-700 font-semibold px-2.5 py-1 rounded-full">
+                        Cantidad: [[ item.quantity ]]
+                    </span>
+                    <span class="text-base font-bold text-blue-600">
+                        $[[ (item.price * item.quantity).toFixed(2) ]]
+                    </span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white p-6 rounded-xl shadow-sm border border-gray-100 h-fit space-y-6">
+            <h3 class="text-lg font-bold text-gray-800 border-b border-gray-100 pb-3">Resumen de Compra</h3>
+
+            <div class="space-y-3">
+                <div class="flex justify-between text-sm text-gray-500">
+                    <span>Subtotal</span>
+                    <span>$[[ totalGeneral.toFixed(2) ]]</span>
+                </div>
+                <div class="flex justify-between text-sm text-gray-500">
+                    <span>Envío</span>
+                    <span class="text-green-600 font-medium">Gratis</span>
+                </div>
+                <div class="border-t border-gray-100 pt-4 flex justify-between items-center text-gray-800 font-bold">
+                    <span>Total General</span>
+                    <span class="text-2xl text-slate-900">$[[ totalGeneral.toFixed(2) ]]</span>
+                </div>
+            </div>
+
+            <button class="w-full bg-slate-900 text-white font-semibold py-3 rounded-xl text-sm hover:bg-slate-800 transition-colors tracking-wide shadow-md">
+                Proceder al Pago
+            </button>
+        </div>
+
+    </div>
+</div>
+
+<script src="/static/js/cart.js?v=1.0"></script>
+{% endblock content %}
