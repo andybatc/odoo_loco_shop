@@ -40,31 +40,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         credentials: 'same-origin'
                     });
 
-                    // 1. Validamos si el servidor respondió con un tipo de contenido JSON
                     const contentType = response.headers.get("content-type");
                     let data;
                     if (contentType && contentType.includes("application/json")) {
                         data = await response.json();
                     } else {
-                        // Si no es JSON, capturamos el HTML/Texto para saber qué pasó
                         const textError = await response.text();
                         console.error("❌ El servidor no devolvió JSON. Respuesta:", textError);
                         alert(`Error del servidor (${response.status}). Revisa la consola.`);
                         return;
                     }
 
-                    // 2. Si es JSON y todo salió bien
                     if (response.ok) {
                         console.log("✅ Éxito:", data.message);
-
-                        const currentBadge = document.querySelector('#vue-test');
-                        let currentCount = 0;
-                        if (currentBadge && currentBadge.__vue_app__) {
-                            currentCount = currentBadge._instance.proxy.cartCount || 0;
-                        }
-                        window.dispatchEvent(new CustomEvent('update-cart-count', {
-                            detail: {count: currentCount + 1}
-                        }));
+                        // Despachamos el evento simple hacia el layout global
+                        window.dispatchEvent(new CustomEvent('update-cart-count'));
                     } else {
                         console.error("❌ Error lógico de la API:", data);
                     }
@@ -72,10 +62,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     console.error("❌ Error de red/conexión:", error);
                     alert("Error de conexión. Verifica que el backend esté corriendo.");
                 } finally {
-                    // Esto siempre se ejecuta, desbloqueando el botón
                     this.addingToCart = null;
                 }
-
             }
         },
         mounted() {

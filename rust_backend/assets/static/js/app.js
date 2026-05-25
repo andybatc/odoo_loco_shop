@@ -25,11 +25,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 console.log("🎯 2. Evento recibido en Vue: Abriendo panel lateral");
             });
 
-            // 🔥 Escuchamos cuando un producto es añadido al carrito desde el otro script
+            // Escuchamos el aviso de la tienda de forma segura
             window.addEventListener('update-cart-count', (event) => {
-                // El servidor de Loco nos devuelve el estado actual o sumamos uno
-                this.cartCount = event.detail.count;
-                console.log("🛒 Carrito actualizado en layout global. Cantidad:", this.cartCount);
+                if (event && event.detail && typeof event.detail.count !== 'undefined') {
+                    this.cartCount = event.detail.count;
+                } else {
+                    this.cartCount++; // Suma 1 limpiamente sobre el 0 inicial
+                }
+                console.log("🛒 Carrito actualizado en layout global. Nuevo total:", this.cartCount);
             });
         }
     }).mount('#vue-test');
