@@ -1,6 +1,6 @@
 # Tienda Total Odoo 🏪📦
 
-[![Odoo](https://img.shields.io/badge/Odoo-18.0%2017.0-875A7B.svg?logo=odoo&logoColor=white)](https://www.odoo.com)
+[![Odoo](https://img.shields.io/badge/Odoo-18.0-875A7B.svg?logo=odoo&logoColor=white)](https://www.odoo.com)
 [![Redis](https://img.shields.io/badge/Redis-Asíncrono-DC382D.svg?logo=redis&logoColor=white)](https://redis.io)
 [![License: LGPL-3](https://img.shields.io/badge/License-LGPL--3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.html)
 
