@@ -33,7 +33,7 @@
 
 Para asegurar el correcto funcionamiento de los módulos de este repositorio, su entorno debe cumplir con:
 
-* **Odoo Versión:** 16.0 o 17.0 (Community o Enterprise)
+* **Odoo Versión:** 18.0 o superior (Community o Enterprise)
 * **Base de datos:** PostgreSQL 13 o superior
 * **Librerías Python adicionales:**
     * `pandas` (para la exportación de reportes avanzados)
