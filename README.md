@@ -49,6 +49,8 @@ A través de las **librerías dedicadas de Loco**, el proyecto sustituye los con
 
 ## 🛠️ Requisitos del Sistema
 
+* **Python Versión:** 3.12
+* **Loco Versión:** 0.16
 * **Odoo Versión:** 18.0 (Community o Enterprise)
 * **Base de datos:** PostgreSQL 13 o superior
 * **Servidor de Memoria:** Redis Server 6.x o superior
@@ -68,3 +70,5 @@ Acceda al directorio de addons personalizados y clone el proyecto:
 ```bash
 cd /opt/odoo/custom_addons
 git clone [https://github.com/andybatc/tienda_total_odoo.git](https://github.com/andybatc/tienda_total_odoo.git)
+```
+### 2. Instalar Loco en su dispositivo
