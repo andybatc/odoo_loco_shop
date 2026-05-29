@@ -10,6 +10,19 @@ A diferencia de las implementaciones estándar, este proyecto desacopla y potenc
 
 ---
 
+## 📋 Tabla de Contenidos
+- [Características Principales](#-características-principales)
+- [Arquitectura Avanzada: Loco + Redis](#-arquitectura-avanzada-loco--redis)
+- [Requisitos del Sistema](#️-requisitos-del-sistema)
+- [Instalación y Configuración](#️-instalación-y-configuración)
+- [Uso](#-uso)
+- [Módulos Incluidos](#-módulos-incluidos)
+- [Solución de Problemas](#-solución-de-problemas)
+- [Contribuir y Soporte](#-contribuir)
+- [Licencia](#-licencia)
+
+---
+
 ## 🚀 Características Principales
 
 * **Punto de Venta (POS) Enriquecido:** Soporte multi-caja, integración de periféricos (básculas, lectores) y control estricto de arqueos.
@@ -48,7 +61,10 @@ A través de las **librerías dedicadas de Loco**, el proyecto sustituye los con
 
 ## ⚙️ Instalación y Configuración
 
+Siga estos pasos para integrar el repositorio en su instancia de Odoo:
+
 ### 1. Clonar el repositorio
+Acceda al directorio de addons personalizados y clone el proyecto:
 ```bash
 cd /opt/odoo/custom_addons
 git clone [https://github.com/andybatc/tienda_total_odoo.git](https://github.com/andybatc/tienda_total_odoo.git)
