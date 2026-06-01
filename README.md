@@ -1,10 +1,10 @@
-# Tienda Total Odoo 🏪📦
+# Odoo Loco Shop 🏪📦
 
 [![Odoo](https://img.shields.io/badge/Odoo-18.0-875A7B.svg?logo=odoo&logoColor=white)](https://www.odoo.com)
 [![Redis](https://img.shields.io/badge/Redis-Asíncrono-DC382D.svg?logo=redis&logoColor=white)](https://redis.io)
 [![License: LGPL-3](https://img.shields.io/badge/License-LGPL--3-blue.svg)](https://www.gnu.org/licenses/lgpl-3.0.html)
 
-**Tienda Total Odoo** es una suite de módulos y personalizaciones diseñada para optimizar, centralizar y potenciar la gestión integral de tiendas minoristas (Retail), supermercados y comercios medianos. 
+**Odoo Loco Shop** es una suite de módulos y personalizaciones diseñada para optimizar, centralizar y potenciar la gestión integral de tiendas minoristas (Retail), supermercados y comercios medianos. 
 
 A diferencia de las implementaciones estándar, este proyecto desacopla y potencia el sitio web mediante la integración del ecosistema **Loco** y **Redis**, garantizando una velocidad de respuesta masiva y un entorno de alta seguridad para operaciones críticas.
 
