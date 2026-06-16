@@ -55,6 +55,7 @@ impl Hooks for App {
     fn routes(_ctx: &AppContext) -> AppRoutes {
         AppRoutes::with_default_routes() // controller routes below
             .add_route(controllers::carts::routes())
+            .add_route(controllers::checkout::routes())
             .add_route(controllers::homepage::routes())
             .add_route(controllers::token_auth::routes())
             .add_route(controllers::views::routes())

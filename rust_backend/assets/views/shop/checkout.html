@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}Confirmar Pedido{% endblock title %}
+
+{% block content %}
+<div id="checkout-app" class="container mx-auto py-10 px-4"
+     data-items='{{ items | json_encode | safe }}'
+     data-total='{{ total }}'>
+
+    <div class="flex items-center justify-between mb-8 border-b border-gray-200 pb-4">
+        <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-2">
+            <svg class="w-8 h-8 text-slate-900" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                      d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+            </svg>
+            Confirmar Pedido
+        </h1>
+        <a href="/cart" class="text-sm text-blue-600 hover:underline flex items-center gap-1">
+            &larr; Volver al carrito
+        </a>
+    </div>
+
+    <div v-if="items.length === 0" class="text-center py-20 text-gray-500 bg-white rounded-xl shadow-sm border border-gray-100 max-w-md mx-auto">
+        <svg class="w-16 h-16 mx-auto text-gray-300 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                  d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 0a2 2 0 110 4 2 2 0 010-4z"></path>
+        </svg>
+        <p class="text-xl font-medium">Tu carrito está vacío</p>
+        <p class="text-sm text-gray-400 mt-1">Añade productos desde el catálogo para continuar.</p>
+        <a href="/" class="mt-6 inline-block bg-slate-900 text-white px-6 py-2.5 rounded-lg text-sm font-medium hover:bg-slate-800 transition-colors">
+            Explorar Productos
+        </a>
+    </div>
+
+    <div v-else class="grid grid-cols-1 lg:grid-cols-5 gap-8">
+
+        <div class="lg:col-span-3 space-y-6">
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100">
+                <h2 class="text-lg font-bold text-gray-800 mb-4">Información de Contacto</h2>
+
+                <form id="checkout-form" @submit.prevent="submitOrder" class="space-y-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Nombre completo</label>
+                            <input v-model="customer.name" type="text" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-sm"
+                                   placeholder="Tu nombre">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Correo electrónico</label>
+                            <input v-model="customer.email" type="email" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-sm"
+                                   placeholder="correo@ejemplo.com">
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Teléfono</label>
+                        <input v-model="customer.phone" type="tel"
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-sm"
+                               placeholder="+52 55 1234 5678">
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Dirección</label>
+                        <input v-model="customer.street" type="text" required
+                               class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-sm"
+                               placeholder="Calle y número">
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Ciudad</label>
+                            <input v-model="customer.city" type="text" required
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-sm"
+                                   placeholder="Ciudad">
+                        </div>
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-1">Código Postal</label>
+                            <input v-model="customer.zip" type="text"
+                                   class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-slate-500 focus:border-slate-500 text-sm"
+                                   placeholder="CP">
+                        </div>
+                    </div>
+
+                    <div v-if="errorMessage" class="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+                        [[ errorMessage ]]
+                    </div>
+
+                    <button type="submit" :disabled="submitting"
+                            class="w-full bg-slate-900 text-white font-semibold py-3 rounded-xl text-sm hover:bg-slate-800 transition-colors tracking-wide shadow-md disabled:opacity-50 disabled:cursor-not-allowed">
+                        [[ submitting ? 'Procesando...' : 'Confirmar Pedido' ]]
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <div class="lg:col-span-2 space-y-4">
+            <div class="bg-white rounded-xl p-6 shadow-sm border border-gray-100 sticky top-4">
+                <h3 class="text-lg font-bold text-gray-800 border-b border-gray-100 pb-3 mb-4">Resumen del Pedido</h3>
+
+                <div class="space-y-3">
+                    <div v-for="item in items" :key="item.id"
+                         class="flex items-center gap-3 py-2 border-b border-gray-50 last:border-0">
+                        <div class="flex-1 min-w-0">
+                            <p class="text-sm font-medium text-gray-800 truncate">[[ item.name ]]</p>
+                            <p class="text-xs text-gray-500">Cant: [[ item.quantity ]] x $[[ item.price.toFixed(2) ]]</p>
+                        </div>
+                        <span class="text-sm font-semibold text-gray-800">$[[ (item.price * item.quantity).toFixed(2) ]]</span>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-100 pt-4 mt-4 space-y-2">
+                    <div class="flex justify-between text-sm text-gray-500">
+                        <span>Subtotal</span>
+                        <span>$[[ totalGeneral.toFixed(2) ]]</span>
+                    </div>
+                    <div class="flex justify-between text-sm text-gray-500">
+                        <span>Envío</span>
+                        <span class="text-green-600 font-medium">Gratis</span>
+                    </div>
+                    <div class="flex justify-between text-lg font-bold text-gray-800 pt-2 border-t border-gray-100">
+                        <span>Total</span>
+                        <span class="text-slate-900">$[[ totalGeneral.toFixed(2) ]]</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<script src="/static/js/checkout.js?v=1.0"></script>
+{% endblock content %}
