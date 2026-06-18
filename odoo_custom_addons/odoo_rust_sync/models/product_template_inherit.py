@@ -53,13 +53,20 @@ class ProductTemplate(models.Model):
             "is_published": self.is_published
         }
 
+    def _get_rust_base_url(self):
+        return self.env['ir.config_parameter'].sudo().get_param(
+            'rust_api.base_url',
+            default='http://127.0.0.1:5150'
+        ).rstrip('/')
+
     def _send_rust_webhook(self):
         token = self.env['ir.config_parameter'].sudo().get_param('rust_api.webhook_token')
         if not token:
             _logger.warning("⚠️ No se envió el webhook a Rust porque 'rust_api.webhook_token' no está configurado.")
             return
 
-        url = "http://127.0.0.1:5150/api/webhooks/odoo/update"
+        base_url = self._get_rust_base_url()
+        url = f"{base_url}/api/webhooks/odoo/update"
         headers = {
             "Authorization": f"Bearer {token}",
             "Content-Type": "application/json"
@@ -86,7 +93,8 @@ class ProductTemplate(models.Model):
         if not token:
             raise UserError("⚠️ El token 'rust_api.webhook_token' no está configurado en los Parámetros del Sistema.")
 
-        url = "http://127.0.0.1:5150/api/webhooks/odoo/bulk-update"
+        base_url = self._get_rust_base_url()
+        url = f"{base_url}/api/webhooks/odoo/bulk-update"
 
         # 'self' aquí ya contiene automáticamente todos los registros seleccionados en la lista
         batch_products = [rec._to_rust_payload() for rec in self]

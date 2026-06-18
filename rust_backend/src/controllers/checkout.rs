@@ -60,7 +60,7 @@ pub async fn get_current_user(
         .ok()?;
     users::Model::find_by_pid(&ctx.db, &auth.claims.pid)
         .await
-        .ok()?
+        .ok()
 }
 
 pub async fn checkout_page(
@@ -228,7 +228,14 @@ pub async fn submit_checkout(
 
     let token = config.and_then(|c| c.value).unwrap_or_default();
 
-    let odoo_url = "http://localhost:8069/api/orders/create";
+    let odoo_domain = configs::Entity::find()
+        .filter(configs::Column::Key.eq("odoo_base_url"))
+        .one(&ctx.db)
+        .await?
+        .and_then(|c| c.value)
+        .unwrap_or_else(|| "http://localhost:8072".to_string());
+
+    let odoo_url = format!("{}/api/orders/create", odoo_domain);
 
     let payload = serde_json::json!({
         "customer": {

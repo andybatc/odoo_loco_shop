@@ -5,5 +5,9 @@
             <field name="key">rust_api.webhook_token</field>
             <field name="value">tu_token_secreto_generado_aqui</field>
         </record>
+        <record id="res_config_parameter_rust_base_url" model="ir.config_parameter">
+            <field name="key">rust_api.base_url</field>
+            <field name="value">http://127.0.0.1:5150</field>
+        </record>
     </data>
 </odoo>

@@ -2,7 +2,6 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 use crate::controllers::auth as auth_controller;
-use crate::controllers::config::TokenForm;
 use crate::models::_entities::{configs, users, cart_items, carts, products};
 use crate::models::users::LoginParams;
 use crate::views::auth::LoginResponse;
@@ -12,7 +11,7 @@ use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use loco_rs::prelude::Json;
 use loco_rs::prelude::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use axum_extra::extract::cookie::CookieJar;
 
 #[derive(Serialize)]
@@ -127,7 +126,7 @@ async fn login_web(
     // Respondemos al navegador
     Response::builder()
         .header("Set-Cookie", cookie)
-        .header("HX-Redirect", "/ui/auth/token")
+        .header("HX-Redirect", "/ui/auth/config")
         .body(axum::body::Body::empty())
         .map_err(|e| Error::string(&e.to_string()))
 }
@@ -138,14 +137,18 @@ async fn register_display() -> Result<Response> {
     format::html(&html)
 }
 
-pub async fn render_ui(
-    // 1. EXTRAEMOS EL MOTOR DE VISTAS AQUÍ (Axum te lo da mágicamente)
+#[derive(Deserialize)]
+pub struct ConfigUpdateForm {
+    pub token: Option<String>,
+    pub odoo_url: Option<String>,
+}
+
+pub async fn config_page(
     ViewEngine(v): ViewEngine<TeraView>,
     State(ctx): State<AppContext>,
     headers: HeaderMap,
 ) -> Result<Response> {
-    // Obtener el token de la DB
-    let config = configs::Entity::find()
+    let webhook_config = configs::Entity::find()
         .filter(configs::Column::Key.eq("webhook_token"))
         .one(&ctx.db)
         .await
@@ -154,25 +157,35 @@ pub async fn render_ui(
             Error::string("Error al conectar con la base de datos")
         })?;
 
-    let token_value = config
+    let token_value = webhook_config
         .and_then(|c| c.value)
         .unwrap_or_else(|| "No configurado".to_string());
 
-    // Obtener usuario para el header
+    let odoo_config = configs::Entity::find()
+        .filter(configs::Column::Key.eq("odoo_base_url"))
+        .one(&ctx.db)
+        .await
+        .map_err(|e| {
+            tracing::error!("Error consultando la DB: {:?}", e);
+            Error::string("Error al conectar con la base de datos")
+        })?;
+
+    let odoo_url_value = odoo_config
+        .and_then(|c| c.value)
+        .unwrap_or_else(|| "http://localhost:8072".to_string());
+
     let cookie_header = headers
         .get("cookie")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
-    // 2. USAMOS .view() EN LUGAR DE .template()
-    // Le pasamos la referencia al motor de vistas (&v)
     format::render().view(
         &v,
         "config/ui.html",
         serde_json::json!({
             "current_user": user,
             "current_token": token_value,
-            "mensaje": "Vue está funcionando"
+            "odoo_base_url": odoo_url_value,
         }),
     )
 }
@@ -251,38 +264,62 @@ pub async fn cart_display(
     )
 }
 
-async fn handle_ui_update(
+async fn handle_config_update(
     State(ctx): State<AppContext>,
-    // Usamos Form en lugar de Json para capturar el envío del navegador
-    const_form: axum::extract::Form<TokenForm>,
+    const_form: axum::extract::Form<ConfigUpdateForm>,
 ) -> Result<Response> {
     let payload = const_form.0;
 
-    let config = configs::Entity::find()
-        .filter(configs::Column::Key.eq("webhook_token"))
-        .one(&ctx.db)
-        .await?;
+    if let Some(token) = payload.token {
+        if !token.is_empty() {
+            let config = configs::Entity::find()
+                .filter(configs::Column::Key.eq("webhook_token"))
+                .one(&ctx.db)
+                .await?;
 
-    if let Some(c) = config {
-        let mut active_model: configs::ActiveModel = c.into();
-        active_model.value = Set(Some(payload.token));
-        active_model.update(&ctx.db).await?;
-    } else {
-        configs::ActiveModel {
-            key: Set(Some("webhook_token".to_string())),
-            value: Set(Some(payload.token)),
-            ..Default::default()
+            if let Some(c) = config {
+                let mut active_model: configs::ActiveModel = c.into();
+                active_model.value = Set(Some(token));
+                active_model.update(&ctx.db).await?;
+            } else {
+                configs::ActiveModel {
+                    key: Set(Some("webhook_token".to_string())),
+                    value: Set(Some(token)),
+                    ..Default::default()
+                }
+                .insert(&ctx.db)
+                .await?;
+            }
         }
-        .insert(&ctx.db)
-        .await?;
+    }
+
+    if let Some(odoo_url) = payload.odoo_url {
+        if !odoo_url.is_empty() {
+            let config = configs::Entity::find()
+                .filter(configs::Column::Key.eq("odoo_base_url"))
+                .one(&ctx.db)
+                .await?;
+
+            if let Some(c) = config {
+                let mut active_model: configs::ActiveModel = c.into();
+                active_model.value = Set(Some(odoo_url));
+                active_model.update(&ctx.db).await?;
+            } else {
+                configs::ActiveModel {
+                    key: Set(Some("odoo_base_url".to_string())),
+                    value: Set(Some(odoo_url)),
+                    ..Default::default()
+                }
+                .insert(&ctx.db)
+                .await?;
+            }
+        }
     }
 
     Response::builder()
         .header("HX-Refresh", "true")
         .body(axum::body::Body::empty())
         .map_err(|e| Error::string(&e.to_string()))
-    // Después de guardar, refrescamos la página
-    //format::render().redirect("ui/auth/token")
 }
 
 pub fn routes() -> Routes {
@@ -295,7 +332,7 @@ pub fn routes() -> Routes {
         .add("/web-login", post(login_web))
         .add("/web-register", get(register_display))
         // Grupo para Configuración
-        // URL Resultante: /api/views/config/token
-        .add("/token", get(render_ui))
-        .add("/token", post(handle_ui_update))
+        // URL Resultante: /api/ui/auth/config
+        .add("/config", get(config_page))
+        .add("/config", post(handle_config_update))
 }

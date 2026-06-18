@@ -74,6 +74,9 @@ class OdooOrderController(http.Controller):
 
             sale_order.action_confirm()
 
+            for line in sale_order.order_line:
+                line.qty_delivered = line.product_uom_qty
+
             invoices = sale_order._create_invoices()
             if invoices:
                 invoices.action_post()

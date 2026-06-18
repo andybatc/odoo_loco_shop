@@ -4,46 +4,68 @@
 
 {% block content %}
 <div class="min-h-full flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
-    <div class="max-w-md w-full space-y-8 bg-white p-10 rounded-xl shadow-lg border border-gray-100">
+    <div class="max-w-lg w-full space-y-8 bg-white p-10 rounded-xl shadow-lg border border-gray-100">
         <div>
             <h2 class="text-center text-3xl font-extrabold text-gray-900">
-                Configuración de Odoo
+                Configuración de Integración
             </h2>
             <p class="mt-2 text-center text-sm text-gray-600">
-                Gestiona el token de acceso para la integración
+                Gestiona la conexión entre la tienda y Odoo
             </p>
         </div>
 
-        <div class="mt-8 space-y-6">
-            <div class="rounded-md bg-blue-50 p-4">
-                <div class="flex">
-                    <div class="ml-3">
-                        <h3 class="text-sm font-medium text-blue-800">Token Actual</h3>
-                        <div class="mt-2 text-sm text-blue-700 font-mono break-all bg-white p-2 rounded border border-blue-200">
-                            {{ current_token }}
-                        </div>
-                    </div>
+        <!-- Sección: Token Webhook -->
+        <div class="bg-blue-50 rounded-md p-4">
+            <h3 class="text-sm font-medium text-blue-800">Token de Acceso</h3>
+            <div class="mt-2 text-sm text-blue-700 font-mono break-all bg-white p-2 rounded border border-blue-200">
+                {{ current_token }}
+            </div>
+        </div>
+
+        <form hx-post="/ui/auth/config" hx-target="#msg-token" class="space-y-4">
+            <div>
+                <label for="token" class="block text-sm font-medium text-gray-700">Nuevo Token</label>
+                <div class="mt-1">
+                    <input id="token" name="token" type="text"
+                           class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
                 </div>
             </div>
+            <div>
+                <button type="submit"
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
+                    Actualizar Token
+                </button>
+            </div>
+            <div id="msg-token" class="text-center text-sm"></div>
+        </form>
 
-            <form hx-post="/ui/auth/token" hx-target="#response-msg" class="mt-8 space-y-6">
-                <div>
-                    <label for="token" class="block text-sm font-medium text-gray-700">Nuevo Token</label>
-                    <div class="mt-1">
-                        <input id="token" name="token" type="text" required
-                               class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-indigo-500 focus:border-indigo-500 sm:text-sm">
-                    </div>
-                </div>
+        <hr class="border-gray-200">
 
-                <div>
-                    <button type="submit"
-                            class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500">
-                        Guardar Cambios
-                    </button>
-                </div>
-                <div id="response-msg" class="text-center text-sm"></div>
-            </form>
+        <!-- Sección: URL de Odoo -->
+        <div class="bg-green-50 rounded-md p-4">
+            <h3 class="text-sm font-medium text-green-800">URL del Servidor Odoo</h3>
+            <div class="mt-2 text-sm text-green-700 font-mono break-all bg-white p-2 rounded border border-green-200">
+                {{ odoo_base_url }}
+            </div>
         </div>
+
+        <form hx-post="/ui/auth/config" hx-target="#msg-odoo" class="space-y-4">
+            <div>
+                <label for="odoo_url" class="block text-sm font-medium text-gray-700">Nuevo Dominio Odoo</label>
+                <p class="text-xs text-gray-500">Ej: http://localhost:8072</p>
+                <div class="mt-1">
+                    <input id="odoo_url" name="odoo_url" type="text" value="{{ odoo_base_url }}"
+                           class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-green-500 focus:border-green-500 sm:text-sm">
+                </div>
+            </div>
+            <div>
+                <button type="submit"
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                    Actualizar URL de Odoo
+                </button>
+            </div>
+            <div id="msg-odoo" class="text-center text-sm"></div>
+        </form>
     </div>
 </div>
 <script src="/static/js/app.js"></script>
