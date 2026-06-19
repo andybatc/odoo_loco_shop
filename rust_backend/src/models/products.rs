@@ -1,4 +1,6 @@
+use loco_rs::prelude::ModelResult;
 use sea_orm::entity::prelude::*;
+use sea_orm::{DbBackend, Statement, ConnectionTrait};
 pub use super::_entities::products::{ActiveModel, Model, Entity};
 pub type Products = Entity;
 
@@ -18,11 +20,51 @@ impl ActiveModelBehavior for ActiveModel {
     }
 }
 
-// implement your read-oriented logic here
 impl Model {}
 
-// implement your write-oriented logic here
 impl ActiveModel {}
 
-// implement your custom finders, selectors oriented logic here
-impl Entity {}
+impl Entity {
+    pub async fn search_products(
+        db: &DatabaseConnection,
+        query: &str,
+        page: u32,
+        page_size: u32,
+    ) -> ModelResult<(Vec<Model>, u64)> {
+        if query.trim().is_empty() {
+            return Ok((Vec::new(), 0));
+        }
+        let offset = (page.saturating_sub(1)) * page_size;
+
+        let count_result = db
+            .query_one(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                r#"SELECT COUNT(*) FROM products
+                   WHERE search_vector @@ plainto_tsquery('spanish', $1)
+                   AND is_published = true"#,
+                vec![query.into()],
+            ))
+            .await?;
+
+        let total: i64 = count_result
+            .and_then(|r| r.try_get_by_index::<i64>(0).ok())
+            .unwrap_or(0);
+
+        let results = Entity::find()
+            .from_raw_sql(Statement::from_sql_and_values(
+                DbBackend::Postgres,
+                r#"SELECT id, odoo_id, sku, name, price, stock, image_filename,
+                          is_published, created_at, updated_at
+                   FROM products
+                   WHERE search_vector @@ plainto_tsquery('spanish', $1)
+                   AND is_published = true
+                   ORDER BY ts_rank(search_vector, plainto_tsquery('spanish', $2)) DESC
+                   LIMIT $3 OFFSET $4"#,
+                vec![query.into(), query.into(), page_size.into(), offset.into()],
+            ))
+            .all(db)
+            .await?;
+
+        Ok((results, total as u64))
+    }
+}

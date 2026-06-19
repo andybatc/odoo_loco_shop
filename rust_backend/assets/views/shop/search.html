@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+
+{% block title %}Buscar: {{ query }} - OdooShop{% endblock title %}
+
+{% block content %}
+<div class="container mx-auto py-8">
+    <form action="/shop/search" method="get" class="mb-8">
+        <div class="flex gap-2 max-w-2xl mx-auto">
+            <input
+                type="text"
+                name="q"
+                value="{{ query }}"
+                placeholder="Buscar productos por nombre o SKU..."
+                class="flex-1 p-4 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                autofocus
+            >
+            <button
+                type="submit"
+                class="bg-slate-900 text-white px-6 py-4 rounded-lg hover:bg-slate-800 transition-colors font-medium"
+            >
+                Buscar
+            </button>
+        </div>
+    </form>
+
+    {% if query %}
+    <p class="text-gray-600 mb-6">
+        {% if total > 0 %}
+            {{ total }} resultado{% if total != 1 %}s{% endif %} para "<strong>{{ query }}</strong>"
+        {% else %}
+            No se encontraron resultados para "<strong>{{ query }}</strong>"
+        {% endif %}
+    </p>
+    {% endif %}
+
+    {% if products %}
+    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {% for product in products %}
+        <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow">
+            <img
+                {% if product.image_filename %}
+                src="/storage/products/{{ product.image_filename }}"
+                {% else %}
+                src="/static/images/No image avaible.jpeg"
+                {% endif %}
+                class="h-48 w-full object-contain hover:bg-slate-800"
+                alt="{{ product.name | default(value='Producto') }}"
+                onerror="this.src='/static/images/No image avaible.jpeg'"
+            >
+            <div class="p-4">
+                <h2 class="text-lg font-bold text-gray-800">{{ product.name | default(value="Producto sin nombre") }}</h2>
+                {% if product.sku %}
+                <p class="text-gray-400 text-xs mt-1">SKU: {{ product.sku }}</p>
+                {% endif %}
+                <div class="mt-4 flex justify-between items-center">
+                    <span class="text-blue-600 font-bold text-xl">
+                        {% if product.price %}
+                        ${{ product.price }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    {% if total_pages > 1 %}
+    <div class="flex justify-center gap-2 mt-10">
+        {% if page > 1 %}
+        <a href="/shop/search?q={{ query }}&page={{ page - 1 }}"
+           class="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">
+            &laquo; Anterior
+        </a>
+        {% endif %}
+
+        {% for p in range(end=total_pages, start=1) %}
+        <a href="/shop/search?q={{ query }}&page={{ p }}"
+           class="px-4 py-2 rounded-lg transition {% if p == page %}bg-slate-900 text-white{% else %}bg-white border border-gray-300 hover:bg-gray-100{% endif %}">
+            {{ p }}
+        </a>
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <a href="/shop/search?q={{ query }}&page={{ page + 1 }}"
+           class="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">
+            Siguiente &raquo;
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    {% if query %}
+    <div class="text-center py-20 text-gray-500">
+        <p class="text-xl">No encontramos productos que coincidan con tu búsqueda.</p>
+        <p class="mt-2">Intenta con otro término o revisa el catálogo completo.</p>
+        <a href="/shop/home" class="mt-4 inline-block text-blue-600 underline hover:text-blue-800">
+            Ver catálogo completo
+        </a>
+    </div>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock content %}

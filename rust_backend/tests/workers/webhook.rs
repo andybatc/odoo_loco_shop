@@ -19,7 +19,8 @@ async fn test_run_webhook_worker() {
                 odoo_id: 13,
                 name:Some("Individual Workplace".to_string()),
                 price:Some(Decimal::from_str_radix("150.50", 10).unwrap()),
-                image_base64:None
+                image_base64:None,
+                is_published: true
             }
         )
             .await
