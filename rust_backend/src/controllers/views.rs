@@ -2,7 +2,8 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 use crate::controllers::auth as auth_controller;
-use crate::models::_entities::{configs, users, cart_items, carts, products};
+use crate::models::_entities::{users, cart_items, carts, products, configs};
+use crate::models::config_cache;
 use crate::models::users::LoginParams;
 use crate::views::auth::LoginResponse;
 use axum::http::HeaderMap;
@@ -148,30 +149,20 @@ pub async fn config_page(
     State(ctx): State<AppContext>,
     headers: HeaderMap,
 ) -> Result<Response> {
-    let webhook_config = configs::Entity::find()
-        .filter(configs::Column::Key.eq("webhook_token"))
-        .one(&ctx.db)
+    let token_value = config_cache::get_cached_config(&ctx, "webhook_token")
         .await
         .map_err(|e| {
-            tracing::error!("Error consultando la DB: {:?}", e);
+            tracing::error!("Error consultando cache: {:?}", e);
             Error::string("Error al conectar con la base de datos")
-        })?;
-
-    let token_value = webhook_config
-        .and_then(|c| c.value)
+        })?
         .unwrap_or_else(|| "No configurado".to_string());
 
-    let odoo_config = configs::Entity::find()
-        .filter(configs::Column::Key.eq("odoo_base_url"))
-        .one(&ctx.db)
+    let odoo_url_value = config_cache::get_cached_config(&ctx, "odoo_base_url")
         .await
         .map_err(|e| {
-            tracing::error!("Error consultando la DB: {:?}", e);
+            tracing::error!("Error consultando cache: {:?}", e);
             Error::string("Error al conectar con la base de datos")
-        })?;
-
-    let odoo_url_value = odoo_config
-        .and_then(|c| c.value)
+        })?
         .unwrap_or_else(|| "http://localhost:8072".to_string());
 
     let cookie_header = headers
@@ -290,6 +281,7 @@ async fn handle_config_update(
                 .insert(&ctx.db)
                 .await?;
             }
+            config_cache::invalidate_config_cache(&ctx, "webhook_token").await;
         }
     }
 
@@ -313,6 +305,7 @@ async fn handle_config_update(
                 .insert(&ctx.db)
                 .await?;
             }
+            config_cache::invalidate_config_cache(&ctx, "odoo_base_url").await;
         }
     }
 

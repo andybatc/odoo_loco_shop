@@ -3,15 +3,16 @@
 #![allow(clippy::unused_async)]
 use crate::models::product_template_odoo::{self};
 use loco_rs::prelude::*;
-use sea_orm::{query::*, Database,ColumnTrait, QueryFilter};
+use sea_orm::{query::*, Database, ColumnTrait, QueryFilter};
 use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use axum::http::HeaderMap;
-use axum::extract::Query;
+use axum::extract::{Query, Path};
 use crate::models::_entities::products;
 use crate::models::products as product_model;
 use crate::controllers::views::get_current_user;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 #[debug_handler]
 pub async fn list(State(_ctx): State<AppContext>) -> Result<Response> {
@@ -30,33 +31,81 @@ pub async fn list(State(_ctx): State<AppContext>) -> Result<Response> {
 
     format::json(products)
 }
+#[derive(Deserialize)]
+pub struct CatalogParams {
+    pub page: Option<u32>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CachedCatalog {
+    pub items: Vec<products::Model>,
+    pub total: u64,
+}
+
+async fn get_catalog_version(ctx: &AppContext) -> i64 {
+    ctx.cache
+        .get::<i64>("products:catalog_version")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(1)
+}
+
+fn catalog_cache_key(ver: i64, page: u32) -> String {
+    format!("catalog:v{}:page:{}", ver, page)
+}
+
+const PAGE_SIZE: u32 = 12;
+
 pub async fn index(
     ViewEngine(v): ViewEngine<TeraView>,
     State(ctx): State<AppContext>,
-    headers: HeaderMap
+    Query(params): Query<CatalogParams>,
+    headers: HeaderMap,
 ) -> Result<Response> {
-    let cache_key = "products:all";
+    let page = params.page.unwrap_or(1).max(1);
+    let ver = get_catalog_version(&ctx).await;
+    let cache_key = catalog_cache_key(ver, page);
 
-    let products = match ctx.cache.get::<Vec<products::Model>>(cache_key).await {
-        Ok(Some(cached_products)) => {
-            tracing::info!("⚡ Hit de Caché: Catálogo cargado desde Redis");
-            cached_products
+    let (products, total) = match ctx.cache.get::<CachedCatalog>(&cache_key).await {
+        Ok(Some(cached)) => {
+            tracing::info!("⚡ Cache hit: catálogo página {}", page);
+            (cached.items, cached.total)
         }
         _ => {
-            tracing::info!("🐢 Cache Miss: Cargando catálogo desde Postgres...");
-            let db_products = products::Entity::find()
+            tracing::info!("🐢 Cache miss: catálogo página {}", page);
+            let offset: u64 = ((page - 1) * PAGE_SIZE).into();
+
+            let total = products::Entity::find()
+                .filter(products::Column::IsPublished.eq(true))
+                .count(&ctx.db)
+                .await? as u64;
+
+            let items = products::Entity::find()
                 .filter(products::Column::IsPublished.eq(true))
                 .order_by_asc(products::Column::Name)
+                .limit(PAGE_SIZE.into())
+                .offset(offset)
                 .all(&ctx.db)
                 .await?;
 
-            let _ = ctx.cache.insert(cache_key, &db_products).await;
+            let cached = CachedCatalog {
+                items: items.clone(),
+                total,
+            };
+            let _ = ctx
+                .cache
+                .insert_with_expiry(&cache_key, &cached, Duration::from_secs(300))
+                .await;
 
-            db_products
+            (items, total)
         }
     };
 
-    let cookie_header = headers.get("cookie")
+    let total_pages = (total as f64 / PAGE_SIZE as f64).ceil() as u64;
+
+    let cookie_header = headers
+        .get("cookie")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
@@ -65,6 +114,9 @@ pub async fn index(
         "shop/home.html",
         serde_json::json!({
             "products": products,
+            "page": page,
+            "total_pages": total_pages,
+            "total": total,
             "current_user": user,
         }),
     )
@@ -85,12 +137,11 @@ pub async fn search_page(
 ) -> Result<Response> {
     let query = params.q.unwrap_or_default();
     let page = params.page.unwrap_or(1).max(1);
-    let page_size = 12;
 
-    let cached = get_or_fetch_search(&ctx, &query, page, page_size).await?;
+    let cached = get_or_fetch_search(&ctx, &query, page, PAGE_SIZE).await?;
 
-    let total_pages = if page_size > 0 {
-        (cached.total as f64 / page_size as f64).ceil() as u64
+    let total_pages = if PAGE_SIZE > 0 {
+        (cached.total as f64 / PAGE_SIZE as f64).ceil() as u64
     } else {
         1
     };
@@ -206,10 +257,55 @@ pub async fn search_api(
 ) -> Result<Json<Vec<SearchResultItem>>> {
     let query = params.q.unwrap_or_default();
     let page = params.page.unwrap_or(1).max(1);
-    let page_size = 12;
 
-    let cached = get_or_fetch_search(&ctx, &query, page, page_size).await?;
+    let cached = get_or_fetch_search(&ctx, &query, page, PAGE_SIZE).await?;
     Ok(Json(cached.items))
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct ProductDetail {
+    pub id: i32,
+    pub name: String,
+    pub sku: Option<String>,
+    pub price: Option<String>,
+    pub stock: Option<f32>,
+    pub image_filename: Option<String>,
+}
+
+#[debug_handler]
+pub async fn get_product(
+    State(ctx): State<AppContext>,
+    Path(id): Path<i32>,
+) -> Result<Json<ProductDetail>> {
+    let cache_key = format!("product:local:{}", id);
+
+    if let Ok(Some(cached)) = ctx.cache.get::<ProductDetail>(&cache_key).await {
+        tracing::info!("⚡ Cache hit: producto {}", id);
+        return Ok(Json(cached));
+    }
+
+    tracing::info!("🐢 Cache miss: producto {}", id);
+    let product = products::Entity::find_by_id(id)
+        .filter(products::Column::IsPublished.eq(true))
+        .one(&ctx.db)
+        .await?
+        .ok_or_else(|| Error::NotFound)?;
+
+    let detail = ProductDetail {
+        id: product.id,
+        name: product.name.unwrap_or_default(),
+        sku: product.sku,
+        price: product.price.map(|d| d.to_string()),
+        stock: product.stock,
+        image_filename: product.image_filename,
+    };
+
+    let _ = ctx
+        .cache
+        .insert_with_expiry(&cache_key, &detail, Duration::from_secs(300))
+        .await;
+
+    Ok(Json(detail))
 }
 
 pub fn routes() -> Routes {
@@ -218,5 +314,6 @@ pub fn routes() -> Routes {
         .add("/home", get(index))
         .add("/search", get(search_page))
         .add("/api/search", get(search_api))
+        .add("/api/product/{id}", get(get_product))
         .add("/api/products", get(list))
 }

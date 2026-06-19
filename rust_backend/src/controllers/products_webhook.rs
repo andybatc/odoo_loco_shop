@@ -4,53 +4,52 @@
 use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use crate::workers::webhook::{WebhookWorker, WebhookWorkerArgs};
-use crate::models::configs;
 use crate::controllers::token_auth::AuthToken;
-use tower::{buffer::BufferLayer, limit::RateLimitLayer, ServiceBuilder};
+use axum::http::StatusCode;
 use std::time::Duration;
-use axum::{
-    error_handling::HandleErrorLayer,
-    routing::post,
-    Json,
-    http::StatusCode,
-    extract::State,
-    http::HeaderMap
-};
 
-type BoxError = Box<dyn std::error::Error + Send + Sync>;
+async fn check_rate_limit(ctx: &AppContext, key: &str, max: i64, window_secs: u64) -> Result<()> {
+    let cache_key = format!("rate_limit:{}", key);
+
+    let count = ctx
+        .cache
+        .get_or_insert_with_expiry::<i64, _>(
+            &cache_key,
+            Duration::from_secs(window_secs),
+            async { Ok(0i64) },
+        )
+        .await?;
+
+    if count >= max {
+        return Err(Error::string("Límite de peticiones excedido"));
+    }
+
+    let _ = ctx
+        .cache
+        .insert_with_expiry(&cache_key, &(count + 1), Duration::from_secs(window_secs))
+        .await;
+
+    Ok(())
+}
+
 #[debug_handler]
-pub async fn index(State(_ctx): State<AppContext>) -> Result<Response> {
-    format::empty()
-}
-
-#[derive(Serialize, Deserialize)]
-pub struct OdooPayload {
-    pub odoo_id: i32,
-}
-
-async fn handle_rate_limit_error(err: BoxError) -> (StatusCode, String) {
-    (
-        StatusCode::TOO_MANY_REQUESTS,
-        format!("Límite de peticiones excedido: {}", err),
-    )
-}
-
-#[axum::debug_handler]
 pub async fn update(
     State(ctx): State<AppContext>,
     _: AuthToken,
-    Json(args): Json<WebhookWorkerArgs>
+    Json(args): Json<WebhookWorkerArgs>,
 ) -> Result<Response> {
-    WebhookWorker::perform_later(&ctx, args).await?;
+    check_rate_limit(&ctx, "webhook:update", 10, 1).await?;
 
+    WebhookWorker::perform_later(&ctx, args).await?;
     format::json::<()>(())
 }
 
 pub async fn update_bulk(
     State(ctx): State<AppContext>,
     _: AuthToken,
-    Json(args_list): Json<Vec<WebhookWorkerArgs>>
+    Json(args_list): Json<Vec<WebhookWorkerArgs>>,
 ) -> Result<Response> {
+    check_rate_limit(&ctx, "webhook:bulk-update", 5, 1).await?;
 
     for args in args_list {
         WebhookWorker::perform_later(&ctx, args).await?;
@@ -60,16 +59,8 @@ pub async fn update_bulk(
 }
 
 pub fn routes() -> Routes {
-    // Al añadir BufferLayer, hacemos que todo el middleware sea "Clone"
-    // y Axum por fin lo aceptará felizmente.
-    let middleware = ServiceBuilder::new()
-        .layer(HandleErrorLayer::new(handle_rate_limit_error))
-        .layer(BufferLayer::new(1024)) 
-        .layer(RateLimitLayer::new(10, Duration::from_secs(1)));
-
     Routes::new()
         .prefix("api/webhooks/odoo")
         .add("/update", post(update))
         .add("/bulk-update", post(update_bulk))
-        .layer(middleware)
 }

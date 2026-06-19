@@ -1,65 +1,83 @@
 {% extends "base.html" %}
 
-{% block title %}Shop Catalog{% endblock title %}
+{% block title %}Catálogo - OdooShop{% endblock title %}
 
 {% block content %}
-<div id="shop-app" class="container mx-auto py-10"
-     data-products='{{ products | json_encode | safe }}'>
-
-    <h1 class="text-3xl font-bold mb-8">Nuestros Productos</h1>
-
-    <div class="mb-8">
-        <input
-                v-model="searchQuery"
-                type="text"
-                placeholder="Buscar productos por nombre o descripción..."
-                class="w-full md:w-1/2 p-4 border border-gray-300 rounded-lg shadow-sm focus:ring-2 focus:ring-blue-500 outline-none"
-        >
+<div class="container mx-auto py-8">
+    <div class="flex justify-between items-center mb-8">
+        <h1 class="text-3xl font-bold">Nuestros Productos</h1>
+        <a href="/shop/search"
+           class="text-blue-600 hover:text-blue-800 underline text-sm">
+            Buscar productos &rarr;
+        </a>
     </div>
 
-    <div v-if="products.length === 0" class="text-center py-20 text-gray-500">
-        <p class="text-xl">Aún no hay productos disponibles en la tienda.</p>
-    </div>
+    {% if products %}
+    <p class="text-gray-500 text-sm mb-4">{{ total }} producto{% if total != 1 %}s{% endif %} &mdash; Página {{ page }} de {{ total_pages }}</p>
 
-    <div v-else-if="filteredProducts.length === 0" class="text-center py-20 text-gray-500">
-        <p class="text-xl">No encontramos productos que coincidan con "[[ searchQuery ]]"</p>
-        <button @click="searchQuery = ''" class="mt-4 text-blue-600 underline hover:text-blue-800">
-            Limpiar búsqueda
-        </button>
-    </div>
-
-    <div v-else class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
-        <div v-for="product in filteredProducts" :key="product.id"
-             class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow">
-
-            <img v-if="!product.image_filename"
-                 src="/static/images/No image avaible.jpeg"
-                 class="h-48 w-full object-contain hover:bg-slate-800"
-                 alt="Sin imagen">
-
-            <img v-else
-                 :src="'/storage/products/' + product.image_filename"
-                 @error="handleImageError"
-                 class="h-48 w-full object-contain hover:bg-slate-800"
-                 alt="Product">
-
+    <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
+        {% for product in products %}
+        <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow">
+            <img
+                {% if product.image_filename %}
+                src="/storage/products/{{ product.image_filename }}"
+                {% else %}
+                src="/static/images/No image avaible.jpeg"
+                {% endif %}
+                class="h-48 w-full object-contain hover:bg-slate-800"
+                alt="{{ product.name | default(value='Producto') }}"
+                loading="lazy"
+                decoding="async"
+                onerror="this.src='/static/images/No image avaible.jpeg'"
+            >
             <div class="p-4">
-                <h2 class="text-lg font-bold text-gray-800">[[ product.name ]]</h2>
-                <p class="text-gray-600 text-sm mt-1">[[ product.description ]]</p>
+                <h2 class="text-lg font-bold text-gray-800">{{ product.name | default(value="Producto sin nombre") }}</h2>
+                {% if product.sku %}
+                <p class="text-gray-400 text-xs mt-1">SKU: {{ product.sku }}</p>
+                {% endif %}
                 <div class="mt-4 flex justify-between items-center">
-                    <span class="text-blue-600 font-bold text-xl">$[[ product.price ]]</span>
-                    <button
-                            @click="addToCart(product.id)"
-                            :disabled="addingToCart === product.id"
-                            class="bg-slate-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-slate-800 disabled:bg-slate-400 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <span v-if="addingToCart === product.id">Añadiendo...</span>
-                        <span v-else>Añadir</span>
-                    </button>
+                    <span class="text-blue-600 font-bold text-xl">
+                        {% if product.price %}
+                        ${{ product.price }}
+                        {% else %}
+                        -
+                        {% endif %}
+                    </span>
                 </div>
             </div>
         </div>
+        {% endfor %}
     </div>
+
+    {% if total_pages > 1 %}
+    <div class="flex justify-center gap-2 mt-10">
+        {% if page > 1 %}
+        <a href="/shop/home?page={{ page - 1 }}"
+           class="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">
+            &laquo; Anterior
+        </a>
+        {% endif %}
+
+        {% for p in range(end=total_pages, start=1) %}
+        <a href="/shop/home?page={{ p }}"
+           class="px-4 py-2 rounded-lg transition {% if p == page %}bg-slate-900 text-white{% else %}bg-white border border-gray-300 hover:bg-gray-100{% endif %}">
+            {{ p }}
+        </a>
+        {% endfor %}
+
+        {% if page < total_pages %}
+        <a href="/shop/home?page={{ page + 1 }}"
+           class="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">
+            Siguiente &raquo;
+        </a>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    {% else %}
+    <div class="text-center py-20 text-gray-500">
+        <p class="text-xl">Aún no hay productos disponibles en la tienda.</p>
+    </div>
+    {% endif %}
 </div>
-<script src="/static/js/shop.js?v=3.3"></script>
 {% endblock content %}

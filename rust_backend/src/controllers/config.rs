@@ -5,12 +5,9 @@ use loco_rs::prelude::*;
 use axum::routing::{get, post};
 use serde::{Deserialize, Serialize};
 use crate::models::_entities::configs;
+use crate::models::config_cache;
 use sea_orm::Set;
 
-#[derive(Serialize, Deserialize)]
-pub struct TokenForm {
-    pub token: String,
-}
 #[derive(Serialize, Deserialize)]
 pub struct TokenRequest {
     pub token: String,
@@ -22,13 +19,8 @@ pub struct OdooUrlRequest {
 }
 
 async fn get_token(State(ctx): State<AppContext>) -> Result<Response> {
-    let config = configs::Entity::find()
-        .filter(configs::Column::Key.eq("webhook_token"))
-        .one(&ctx.db)
-        .await?;
-
-    let token_value = config
-        .and_then(|c| c.value)
+    let token_value = config_cache::get_cached_config(&ctx, "webhook_token")
+        .await?
         .unwrap_or_else(|| "not_set".to_string());
 
     format::json(token_value)
@@ -53,21 +45,17 @@ async fn update_token(
             value: Set(Some(payload.token)),
             ..Default::default()
         }
-            .insert(&ctx.db)
-            .await?;
+        .insert(&ctx.db)
+        .await?;
     }
 
+    config_cache::invalidate_config_cache(&ctx, "webhook_token").await;
     format::json(serde_json::json!({ "status": "ok" }))
 }
 
 async fn get_odoo_url(State(ctx): State<AppContext>) -> Result<Response> {
-    let config = configs::Entity::find()
-        .filter(configs::Column::Key.eq("odoo_base_url"))
-        .one(&ctx.db)
-        .await?;
-
-    let url_value = config
-        .and_then(|c| c.value)
+    let url_value = config_cache::get_cached_config(&ctx, "odoo_base_url")
+        .await?
         .unwrap_or_else(|| "http://localhost:8072".to_string());
 
     format::json(url_value)
@@ -92,10 +80,11 @@ async fn update_odoo_url(
             value: Set(Some(payload.url)),
             ..Default::default()
         }
-            .insert(&ctx.db)
-            .await?;
+        .insert(&ctx.db)
+        .await?;
     }
 
+    config_cache::invalidate_config_cache(&ctx, "odoo_base_url").await;
     format::json(serde_json::json!({ "status": "ok" }))
 }
 
