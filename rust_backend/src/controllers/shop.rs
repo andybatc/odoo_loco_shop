@@ -87,13 +87,13 @@ pub async fn search_page(
     let page = params.page.unwrap_or(1).max(1);
     let page_size = 12;
 
-    let (products, total) = if query.trim().is_empty() {
-        (Vec::new(), 0)
-    } else {
-        product_model::Entity::search_products(&ctx.db, &query, page, page_size).await?
-    };
+    let cached = get_or_fetch_search(&ctx, &query, page, page_size).await?;
 
-    let total_pages = if page_size > 0 { (total as f64 / page_size as f64).ceil() as u64 } else { 1 };
+    let total_pages = if page_size > 0 {
+        (cached.total as f64 / page_size as f64).ceil() as u64
+    } else {
+        1
+    };
 
     let cookie_header = headers
         .get("cookie")
@@ -104,22 +104,99 @@ pub async fn search_page(
         &v,
         "shop/search.html",
         serde_json::json!({
-            "products": products,
+            "products": cached.items,
             "query": query,
             "page": page,
             "total_pages": total_pages,
-            "total": total,
+            "total": cached.total,
             "current_user": user,
         }),
     )
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct SearchResultItem {
     pub id: i32,
     pub name: String,
+    pub sku: Option<String>,
     pub price: Option<String>,
     pub image_filename: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct CachedSearchResult {
+    pub items: Vec<SearchResultItem>,
+    pub total: u64,
+}
+
+async fn get_search_version(ctx: &AppContext) -> i64 {
+    ctx.cache
+        .get::<i64>("products:search_version")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(1)
+}
+
+fn normalize_query(q: &str) -> String {
+    q.trim().to_lowercase()
+}
+
+fn search_cache_key(ver: i64, query: &str, page: u32) -> String {
+    format!("search:v{}:{}:{}", ver, query, page)
+}
+
+async fn fetch_and_cache_search(
+    ctx: &AppContext,
+    query: &str,
+    page: u32,
+    page_size: u32,
+    ver: i64,
+) -> Result<CachedSearchResult> {
+    let (products, total) =
+        product_model::Entity::search_products(&ctx.db, query, page, page_size).await?;
+
+    let items: Vec<SearchResultItem> = products
+        .into_iter()
+        .map(|p| SearchResultItem {
+            id: p.id,
+            name: p.name.clone().unwrap_or_default(),
+            sku: p.sku.clone(),
+            price: p.price.map(|d| d.to_string()),
+            image_filename: p.image_filename.clone(),
+        })
+        .collect();
+
+    let cached = CachedSearchResult { items, total };
+    let cache_key = search_cache_key(ver, &normalize_query(query), page);
+    let _ = ctx.cache.insert_with_expiry(&cache_key, &cached, std::time::Duration::from_secs(300)).await;
+
+    Ok(cached)
+}
+
+async fn get_or_fetch_search(
+    ctx: &AppContext,
+    query: &str,
+    page: u32,
+    page_size: u32,
+) -> Result<CachedSearchResult> {
+    if normalize_query(query).is_empty() {
+        return Ok(CachedSearchResult {
+            items: Vec::new(),
+            total: 0,
+        });
+    }
+
+    let ver = get_search_version(ctx).await;
+    let cache_key = search_cache_key(ver, &normalize_query(query), page);
+
+    if let Ok(Some(cached)) = ctx.cache.get::<CachedSearchResult>(&cache_key).await {
+        tracing::info!("⚡ Cache hit: búsqueda '{}' página {}", query, page);
+        return Ok(cached);
+    }
+
+    tracing::info!("🐢 Cache miss: búsqueda '{}' página {}", query, page);
+    fetch_and_cache_search(ctx, query, page, page_size, ver).await
 }
 
 #[debug_handler]
@@ -131,24 +208,8 @@ pub async fn search_api(
     let page = params.page.unwrap_or(1).max(1);
     let page_size = 12;
 
-    if query.trim().is_empty() {
-        return Ok(Json(Vec::new()));
-    }
-
-    let (products, _total) =
-        product_model::Entity::search_products(&ctx.db, &query, page, page_size).await?;
-
-    let items: Vec<SearchResultItem> = products
-        .into_iter()
-        .map(|p| SearchResultItem {
-            id: p.id,
-            name: p.name.unwrap_or_default(),
-            price: p.price.map(|d| d.to_string()),
-            image_filename: p.image_filename,
-        })
-        .collect();
-
-    Ok(Json(items))
+    let cached = get_or_fetch_search(&ctx, &query, page, page_size).await?;
+    Ok(Json(cached.items))
 }
 
 pub fn routes() -> Routes {

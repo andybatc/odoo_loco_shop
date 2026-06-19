@@ -105,6 +105,7 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
 
                     let _ = self.ctx.cache.remove(&cache_key_individual).await;
                     let _ = self.ctx.cache.remove(cache_key_catalogo).await;
+                    bump_search_version(&self.ctx).await;
                     tracing::info!("♻️ Caché de Redis limpia para producto {} y catálogo global.", args.odoo_id);
                 } else {
                     tracing::warn!("⚠️ No se detectaron cambios reales. Se omitió el UPDATE.");
@@ -130,6 +131,7 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                     .map_err(|e| loco_rs::Error::msg(e))?;
 
                 let _ = self.ctx.cache.remove(cache_key_catalogo).await;
+                bump_search_version(&self.ctx).await;
                 tracing::info!("♻️ Catálogo global invalidado en Redis por nuevo producto.");
             }
         }
@@ -137,4 +139,15 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
         tracing::info!("✅ Sincronización finalizada localmente para ID Odoo: {}", args.odoo_id);
         Ok(())
     }
+}
+
+async fn bump_search_version(ctx: &AppContext) {
+    let ver = ctx
+        .cache
+        .get::<i64>("products:search_version")
+        .await
+        .ok()
+        .flatten()
+        .unwrap_or(0);
+    let _ = ctx.cache.insert("products:search_version", &(ver + 1)).await;
 }
