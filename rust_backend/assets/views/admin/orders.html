@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Órdenes - Admin OdooShop{% endblock title %}
+
+{% block content %}
+<div class="container mx-auto py-8 px-4">
+    <div class="flex items-center justify-between mb-8">
+        <h1 class="text-3xl font-bold text-gray-800">Todas las Órdenes</h1>
+        <a href="/admin/dashboard" class="text-blue-600 hover:underline text-sm">&larr; Volver al dashboard</a>
+    </div>
+
+    <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        {% if orders %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead>
+                    <tr class="text-left text-gray-500 border-b border-gray-100">
+                        <th class="pb-3 font-medium">Cliente</th>
+                        <th class="pb-3 font-medium">Email</th>
+                        <th class="pb-3 font-medium">Total</th>
+                        <th class="pb-3 font-medium">Estado</th>
+                        <th class="pb-3 font-medium">Fecha</th>
+                        <th class="pb-3 font-medium">Odoo Ref</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for order in orders %}
+                    <tr class="border-b border-gray-50 hover:bg-gray-50">
+                        <td class="py-3 font-medium text-gray-800">{{ order.customer_name }}</td>
+                        <td class="py-3 text-gray-500">{{ order.customer_email }}</td>
+                        <td class="py-3">${{ order.total }}</td>
+                        <td class="py-3">
+                            <span class="px-2 py-1 rounded-full text-xs font-semibold
+                                {% if order.status == 'confirmed' %}bg-green-100 text-green-700
+                                {% elif order.status == 'pending' %}bg-yellow-100 text-yellow-700
+                                {% elif order.status == 'failed' %}bg-red-100 text-red-700
+                                {% else %}bg-gray-100 text-gray-700{% endif %}">
+                                {{ order.status }}
+                            </span>
+                        </td>
+                        <td class="py-3 text-gray-500">{{ order.created_at }}</td>
+                        <td class="py-3 font-mono text-xs text-gray-400">{{ order.odoo_order_name | default(value="-") }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-gray-500 text-center py-8">No hay órdenes registradas.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock content %}

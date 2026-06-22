@@ -10,6 +10,7 @@
     <script src="/static/js/htmx.min.js"></script>
     <script src="/static/js/vue.global.js"></script>
     <script src="/static/js/app.js?v=2"></script>
+    {% block head_extra %}{% endblock head_extra %}
 </head>
 <body class="bg-gray-50 flex flex-col min-h-screen" style="background-color: aliceblue;">
 
@@ -47,6 +48,11 @@
                         <a href="/ui/auth/config"
                            class="block px-4 py-2 text-sm text-gray-200 hover:bg-slate-800 rounded transition">Integración
                             Odoo</a>
+                        {% if current_user and current_user.role == "admin" %}
+                        <a href="/admin/dashboard"
+                           class="block px-4 py-2 text-sm text-gray-200 hover:bg-slate-800 rounded transition">Panel
+                            Admin</a>
+                        {% endif %}
                     </div>
                 </div>
             </div>

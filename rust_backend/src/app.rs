@@ -17,7 +17,9 @@ use axum::{Extension, Router};
 use axum::routing::get_service;
 use loco_rs::prelude::*;
 use tower_http::services::ServeDir;
+use tower_http::cors::CorsLayer;
 use loco_rs::controller::Routes;
+use utoipa::OpenApi;
 use std::env;
 
 #[allow(unused_imports)]
@@ -63,6 +65,7 @@ impl Hooks for App {
             .add_route(controllers::products_webhook::routes())
             .add_route(controllers::shop::routes())
             .add_route(controllers::auth::routes())
+            .add_route(controllers::admin::routes())
     }
     async fn after_routes(router: Router, _ctx: &AppContext) -> Result<Router> {
         // 1. Construimos la ruta absoluta hacia tus imágenes
@@ -74,8 +77,20 @@ impl Hooks for App {
 
         // 3. Construimos el motor Tera
         let tera_engine = TeraView::build()?;
-        
-        Ok(router.layer(Extension(ViewEngine::new(tera_engine))))
+
+        // 4. CORS para desarrollo
+        let cors = CorsLayer::new()
+            .allow_origin(tower_http::cors::Any)
+            .allow_methods(tower_http::cors::Any)
+            .allow_headers(tower_http::cors::Any);
+
+        // 5. OpenAPI / Swagger UI
+        use utoipa_swagger_ui::SwaggerUi;
+        let router = router.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", crate::api_docs::ApiDoc::openapi()));
+
+        Ok(router
+            .layer(cors)
+            .layer(Extension(ViewEngine::new(tera_engine))))
     }
     async fn connect_workers(ctx: &AppContext, queue: &Queue) -> Result<()> {
         queue.register(crate::workers::webhook::WebhookWorker::build(ctx)).await?;
@@ -87,6 +102,7 @@ impl Hooks for App {
     #[allow(unused_variables)]
     fn register_tasks(tasks: &mut Tasks) {
         tasks.register(tasks::sync::Sync);
+        tasks.register(tasks::promote_user::PromoteUser);
         // tasks-inject (do not remove)
     }
     async fn truncate(ctx: &AppContext) -> Result<()> {
