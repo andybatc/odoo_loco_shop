@@ -68,6 +68,24 @@ impl Hooks for App {
             .add_route(controllers::admin::routes())
     }
     async fn after_routes(router: Router, _ctx: &AppContext) -> Result<Router> {
+        // Middleware para reemplazar páginas de error 500
+        async fn error_page_middleware(
+            req: axum::http::Request<axum::body::Body>,
+            next: axum::middleware::Next,
+        ) -> axum::response::Response {
+            let response = next.run(req).await;
+            if response.status() == axum::http::StatusCode::INTERNAL_SERVER_ERROR {
+                if let Ok(body) = std::fs::read_to_string("assets/static/500.html") {
+                    return axum::response::Response::builder()
+                        .status(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
+                        .header("content-type", "text/html")
+                        .body(axum::body::Body::from(body))
+                        .unwrap();
+                }
+            }
+            response
+        }
+
         // 1. Construimos la ruta absoluta hacia tus imágenes
         let root = std::env::current_dir().expect("No se pudo obtener el directorio actual");
         let storage_path = root.join("storage/products");
@@ -89,6 +107,7 @@ impl Hooks for App {
         let router = router.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", crate::api_docs::ApiDoc::openapi()));
 
         Ok(router
+            .layer(axum::middleware::from_fn(error_page_middleware))
             .layer(cors)
             .layer(Extension(ViewEngine::new(tera_engine))))
     }
