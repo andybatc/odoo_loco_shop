@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+
+{% block title %}{{ product.name }} - OdooShop{% endblock title %}
+
+{% block content %}
+<div class="container mx-auto py-8 px-4">
+    <a href="/shop/home" class="text-blue-600 hover:underline text-sm mb-6 inline-block">&larr; Volver al catálogo</a>
+
+    <div class="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 p-8">
+            <div class="flex items-center justify-center bg-gray-50 rounded-lg p-8">
+                <img
+                    {% if product.image_filename %}
+                    src="/storage/products/{{ product.image_filename }}"
+                    {% else %}
+                    src="/static/images/No image avaible.jpeg"
+                    {% endif %}
+                    class="max-h-96 object-contain rounded-lg"
+                    alt="{{ product.name }}"
+                    loading="lazy"
+                    decoding="async"
+                    onerror="this.src='/static/images/No image avaible.jpeg'"
+                >
+            </div>
+            <div class="flex flex-col justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-800">{{ product.name }}</h1>
+                    {% if product.sku %}
+                    <p class="text-gray-400 text-sm mt-1">SKU: {{ product.sku }}</p>
+                    {% endif %}
+                    <div class="mt-6">
+                        <span class="text-4xl font-bold text-blue-600">
+                            {% if product.price %}
+                            ${{ product.price }}
+                            {% else %}
+                            Consultar precio
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% if product.stock is not null %}
+                    <p class="text-sm mt-2 {% if product.stock > 0 %}text-green-600{% else %}text-red-500{% endif %}">
+                        {% if product.stock > 0 %}
+                        {{ product.stock }} en stock
+                        {% else %}
+                        Agotado
+                        {% endif %}
+                    </p>
+                    {% endif %}
+                </div>
+                <div class="mt-8 space-y-3">
+                    <button
+                        hx-post="/api/carts"
+                        hx-headers='{"Content-Type": "application/json"}'
+                        hx-vals='{"product_id": {{ product.id }} }'
+                        hx-target="#cart-badge"
+                        hx-swap="outerHTML"
+                        class="w-full bg-slate-900 text-white font-semibold py-3 rounded-xl hover:bg-slate-800 transition-colors tracking-wide shadow-md text-center"
+                    >
+                        Agregar al Carrito
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock content %}

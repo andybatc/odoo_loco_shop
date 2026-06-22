@@ -3,5 +3,7 @@
 pub use super::cart_items::Entity as CartItems;
 pub use super::carts::Entity as Carts;
 pub use super::configs::Entity as Configs;
+pub use super::order_items::Entity as OrderItems;
+pub use super::orders::Entity as Orders;
 pub use super::products::Entity as Products;
 pub use super::users::Entity as Users;

@@ -19,6 +19,7 @@ pub struct Model {
     pub stock: Option<f32>,
     pub image_filename: Option<String>,
     pub is_published: bool,
+    pub category: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

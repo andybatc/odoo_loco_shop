@@ -7,4 +7,5 @@ pub mod views;
 pub mod token_auth;
 pub mod homepage;
 pub mod carts;
+pub mod admin;
 pub mod checkout;

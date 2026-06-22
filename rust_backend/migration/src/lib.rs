@@ -11,6 +11,10 @@ mod m20260521_162612_add_published;
 mod m20260524_140919_carts;
 mod m20260524_140942_create_cart_items;
 mod m20260526_000001_product_search;
+mod m20260622_000001_fix_cart_items_product_type;
+mod m20260622_000002_create_orders;
+mod m20260622_000003_add_category_to_products;
+mod m20260622_000004_add_role_to_users;
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -26,6 +30,10 @@ impl MigratorTrait for Migrator {
             Box::new(m20260524_140919_carts::Migration),
             Box::new(m20260524_140942_create_cart_items::Migration),
             Box::new(m20260526_000001_product_search::Migration),
+            Box::new(m20260622_000001_fix_cart_items_product_type::Migration),
+            Box::new(m20260622_000002_create_orders::Migration),
+            Box::new(m20260622_000003_add_category_to_products::Migration),
+            Box::new(m20260622_000004_add_role_to_users::Migration),
             // inject-above (do not remove this comment)
         ]
     }

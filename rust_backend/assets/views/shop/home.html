@@ -12,12 +12,25 @@
         </a>
     </div>
 
+    {% if categories %}
+    <div class="flex flex-wrap gap-2 mb-6">
+        <a href="/shop/home" class="px-3 py-1.5 rounded-full text-sm font-medium {% if category == '' %}bg-slate-900 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %} transition">
+            Todas
+        </a>
+        {% for cat in categories %}
+        <a href="/shop/home?category={{ cat }}" class="px-3 py-1.5 rounded-full text-sm font-medium {% if category == cat %}bg-slate-900 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %} transition">
+            {{ cat }}
+        </a>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     {% if products %}
     <p class="text-gray-500 text-sm mb-4">{{ total }} producto{% if total != 1 %}s{% endif %} &mdash; Página {{ page }} de {{ total_pages }}</p>
 
     <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {% for product in products %}
-        <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow">
+        <a href="/shop/product/{{ product.id }}" class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow block">
             <img
                 {% if product.image_filename %}
                 src="/storage/products/{{ product.image_filename }}"
@@ -35,6 +48,9 @@
                 {% if product.sku %}
                 <p class="text-gray-400 text-xs mt-1">SKU: {{ product.sku }}</p>
                 {% endif %}
+                {% if product.category %}
+                <p class="text-gray-400 text-xs mt-1">{{ product.category }}</p>
+                {% endif %}
                 <div class="mt-4 flex justify-between items-center">
                     <span class="text-blue-600 font-bold text-xl">
                         {% if product.price %}
@@ -45,28 +61,28 @@
                     </span>
                 </div>
             </div>
-        </div>
+        </a>
         {% endfor %}
     </div>
 
     {% if total_pages > 1 %}
     <div class="flex justify-center gap-2 mt-10">
         {% if page > 1 %}
-        <a href="/shop/home?page={{ page - 1 }}"
+        <a href="/shop/home?page={{ page - 1 }}{% if category %}&category={{ category }}{% endif %}"
            class="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">
             &laquo; Anterior
         </a>
         {% endif %}
 
         {% for p in range(end=total_pages, start=1) %}
-        <a href="/shop/home?page={{ p }}"
+        <a href="/shop/home?page={{ p }}{% if category %}&category={{ category }}{% endif %}"
            class="px-4 py-2 rounded-lg transition {% if p == page %}bg-slate-900 text-white{% else %}bg-white border border-gray-300 hover:bg-gray-100{% endif %}">
             {{ p }}
         </a>
         {% endfor %}
 
         {% if page < total_pages %}
-        <a href="/shop/home?page={{ page + 1 }}"
+        <a href="/shop/home?page={{ page + 1 }}{% if category %}&category={{ category }}{% endif %}"
            class="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">
             Siguiente &raquo;
         </a>

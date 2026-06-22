@@ -13,7 +13,8 @@ use loco_rs::controller::views::ViewEngine;
 use loco_rs::prelude::Json;
 use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
-use axum_extra::extract::cookie::CookieJar;
+use axum_extra::extract::cookie::{Cookie, CookieJar};
+use regex::Regex;
 
 #[derive(Serialize)]
 pub struct BaseContext {
@@ -148,7 +149,8 @@ pub async fn config_page(
     ViewEngine(v): ViewEngine<TeraView>,
     State(ctx): State<AppContext>,
     headers: HeaderMap,
-) -> Result<Response> {
+    jar: CookieJar,
+) -> Result<(CookieJar, Response)> {
     let token_value = config_cache::get_cached_config(&ctx, "webhook_token")
         .await
         .map_err(|e| {
@@ -170,15 +172,25 @@ pub async fn config_page(
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
-    format::render().view(
+    let csrf_token = uuid::Uuid::new_v4().to_string();
+    let csrf_cookie = Cookie::build(("csrf_token", csrf_token.clone()))
+        .path("/")
+        .http_only(true)
+        .build();
+    let jar = jar.add(csrf_cookie);
+
+    let response = format::render().view(
         &v,
         "config/ui.html",
         serde_json::json!({
             "current_user": user,
             "current_token": token_value,
             "odoo_base_url": odoo_url_value,
+            "csrf_token": csrf_token,
         }),
-    )
+    )?;
+
+    Ok((jar, response))
 }
 
 pub async fn cart_display(
@@ -209,13 +221,9 @@ pub async fn cart_display(
                 let mut product_ids = Vec::new();
                 let mut item_quantities = std::collections::HashMap::new();
 
-                // 3. Revertir el padding del UUID para obtener los IDs numéricos (i32) de Odoo
-                for item in items {
-                    let hex_str = item.product_id.simple().to_string();
-                    if let Ok(prod_id) = i32::from_str_radix(&hex_str, 16) {
-                        product_ids.push(prod_id);
-                        item_quantities.insert(prod_id, item.quantity);
-                    }
+                for item in &items {
+                    product_ids.push(item.product_id);
+                    item_quantities.insert(item.product_id, item.quantity);
                 }
 
                 // 4. Buscar los productos en la base de datos de una sola consulta
@@ -257,11 +265,22 @@ pub async fn cart_display(
 
 async fn handle_config_update(
     State(ctx): State<AppContext>,
+    jar: CookieJar,
+    headers: HeaderMap,
     const_form: axum::extract::Form<ConfigUpdateForm>,
-) -> Result<Response> {
+) -> Result<(CookieJar, Response)> {
+    let csrf_header = headers.get("X-CSRF-Token").and_then(|v| v.to_str().ok());
+    if !crate::middleware::csrf::validate_csrf(&jar, csrf_header) {
+        return Err(Error::BadRequest("CSRF token inválido".to_string()));
+    }
+
     let payload = const_form.0;
+    let url_re = Regex::new(r"^https?://[a-zA-Z0-9][-a-zA-Z0-9.]*[a-zA-Z0-9](:[0-9]+)?(/.*)?$").unwrap();
 
     if let Some(token) = payload.token {
+        if !token.is_empty() && token.len() < 8 {
+            return Err(Error::BadRequest("token must be at least 8 characters".to_string()));
+        }
         if !token.is_empty() {
             let config = configs::Entity::find()
                 .filter(configs::Column::Key.eq("webhook_token"))
@@ -287,6 +306,9 @@ async fn handle_config_update(
 
     if let Some(odoo_url) = payload.odoo_url {
         if !odoo_url.is_empty() {
+            if !url_re.is_match(&odoo_url) {
+                return Err(Error::BadRequest("invalid URL format (must start with http:// or https://)".to_string()));
+            }
             let config = configs::Entity::find()
                 .filter(configs::Column::Key.eq("odoo_base_url"))
                 .one(&ctx.db)
@@ -309,10 +331,11 @@ async fn handle_config_update(
         }
     }
 
-    Response::builder()
+    let response = Response::builder()
         .header("HX-Refresh", "true")
         .body(axum::body::Body::empty())
-        .map_err(|e| Error::string(&e.to_string()))
+        .map_err(|e| Error::string(&e.to_string()))?;
+    Ok((jar, response))
 }
 
 pub fn routes() -> Routes {

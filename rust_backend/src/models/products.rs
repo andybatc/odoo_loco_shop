@@ -10,6 +10,20 @@ impl ActiveModelBehavior for ActiveModel {
     where
         C: ConnectionTrait,
     {
+        if !self.price.is_unchanged() {
+            if let Some(price) = self.price.clone().unwrap() {
+                if price < sea_orm::prelude::Decimal::ZERO {
+                    return Err(DbErr::Custom("price cannot be negative".to_string()));
+                }
+            }
+        }
+        if !self.name.is_unchanged() {
+            if let Some(name) = self.name.clone().unwrap() {
+                if name.trim().is_empty() {
+                    return Err(DbErr::Custom("name cannot be empty".to_string()));
+                }
+            }
+        }
         if !insert && self.updated_at.is_unchanged() {
             let mut this = self;
             this.updated_at = sea_orm::ActiveValue::Set(chrono::Utc::now().into());

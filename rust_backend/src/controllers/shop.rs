@@ -12,6 +12,7 @@ use crate::models::_entities::products;
 use crate::models::products as product_model;
 use crate::controllers::views::get_current_user;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use std::time::Duration;
 
 #[debug_handler]
@@ -34,6 +35,7 @@ pub async fn list(State(_ctx): State<AppContext>) -> Result<Response> {
 #[derive(Deserialize)]
 pub struct CatalogParams {
     pub page: Option<u32>,
+    pub category: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -51,8 +53,9 @@ async fn get_catalog_version(ctx: &AppContext) -> i64 {
         .unwrap_or(1)
 }
 
-fn catalog_cache_key(ver: i64, page: u32) -> String {
-    format!("catalog:v{}:page:{}", ver, page)
+fn catalog_cache_key(ver: i64, page: u32, category: &str) -> String {
+    let cat_part = if category.is_empty() { "all".to_string() } else { category.to_string() };
+    format!("catalog:v{}:{}:page:{}", ver, cat_part, page)
 }
 
 const PAGE_SIZE: u32 = 12;
@@ -64,8 +67,9 @@ pub async fn index(
     headers: HeaderMap,
 ) -> Result<Response> {
     let page = params.page.unwrap_or(1).max(1);
+    let category = params.category.clone().unwrap_or_default();
     let ver = get_catalog_version(&ctx).await;
-    let cache_key = catalog_cache_key(ver, page);
+    let cache_key = catalog_cache_key(ver, page, &category);
 
     let (products, total) = match ctx.cache.get::<CachedCatalog>(&cache_key).await {
         Ok(Some(cached)) => {
@@ -76,13 +80,19 @@ pub async fn index(
             tracing::info!("🐢 Cache miss: catálogo página {}", page);
             let offset: u64 = ((page - 1) * PAGE_SIZE).into();
 
-            let total = products::Entity::find()
-                .filter(products::Column::IsPublished.eq(true))
-                .count(&ctx.db)
-                .await? as u64;
+            let mut query = products::Entity::find()
+                .filter(products::Column::IsPublished.eq(true));
+            let mut count_query = products::Entity::find()
+                .filter(products::Column::IsPublished.eq(true));
 
-            let items = products::Entity::find()
-                .filter(products::Column::IsPublished.eq(true))
+            if !category.is_empty() {
+                query = query.filter(products::Column::Category.eq(Some(category.clone())));
+                count_query = count_query.filter(products::Column::Category.eq(Some(category.clone())));
+            }
+
+            let total = count_query.count(&ctx.db).await? as u64;
+
+            let items = query
                 .order_by_asc(products::Column::Name)
                 .limit(Some(PAGE_SIZE as u64))
                 .offset(Some(offset))
@@ -109,6 +119,20 @@ pub async fn index(
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
+    let categories: Vec<String> = products::Entity::find()
+        .filter(products::Column::IsPublished.eq(true))
+        .filter(products::Column::Category.is_not_null())
+        .all(&ctx.db)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|p| p.category)
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .collect();
+    let mut categories: Vec<String> = categories;
+    categories.sort();
+
     format::render().view(
         &v,
         "shop/home.html",
@@ -118,6 +142,8 @@ pub async fn index(
             "total_pages": total_pages,
             "total": total,
             "current_user": user,
+            "category": category,
+            "categories": categories,
         }),
     )
 }
@@ -165,7 +191,7 @@ pub async fn search_page(
     )
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, ToSchema)]
 pub struct SearchResultItem {
     pub id: i32,
     pub name: String,
@@ -250,6 +276,18 @@ async fn get_or_fetch_search(
     fetch_and_cache_search(ctx, query, page, page_size, ver).await
 }
 
+#[utoipa::path(
+    get,
+    path = "/shop/api/search",
+    params(
+        ("q" = Option<String>, Query, description = "Search query"),
+        ("page" = Option<u32>, Query, description = "Page number")
+    ),
+    responses(
+        (status = 200, description = "Search results", body = Vec<SearchResultItem>)
+    ),
+    tag = "Shop"
+)]
 #[debug_handler]
 pub async fn search_api(
     State(ctx): State<AppContext>,
@@ -262,7 +300,7 @@ pub async fn search_api(
     Ok(Json(cached.items))
 }
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, ToSchema)]
 pub struct ProductDetail {
     pub id: i32,
     pub name: String,
@@ -272,6 +310,18 @@ pub struct ProductDetail {
     pub image_filename: Option<String>,
 }
 
+#[utoipa::path(
+    get,
+    path = "/shop/api/product/{id}",
+    params(
+        ("id" = i32, Path, description = "Product ID")
+    ),
+    responses(
+        (status = 200, description = "Product detail", body = ProductDetail),
+        (status = 404, description = "Product not found")
+    ),
+    tag = "Shop"
+)]
 #[debug_handler]
 pub async fn get_product(
     State(ctx): State<AppContext>,
@@ -308,12 +358,48 @@ pub async fn get_product(
     Ok(Json(detail))
 }
 
+pub async fn get_product_page(
+    ViewEngine(v): ViewEngine<TeraView>,
+    State(ctx): State<AppContext>,
+    Path(id): Path<i32>,
+    headers: HeaderMap,
+) -> Result<Response> {
+    let cache_key = format!("product:local:{}", id);
+
+    let product = if let Ok(Some(cached)) = ctx.cache.get::<products::Model>(&cache_key).await {
+        cached
+    } else {
+        let p = products::Entity::find_by_id(id)
+            .filter(products::Column::IsPublished.eq(true))
+            .one(&ctx.db)
+            .await?
+            .ok_or_else(|| Error::NotFound)?;
+        let _ = ctx.cache.insert_with_expiry(&cache_key, &p, Duration::from_secs(300)).await;
+        p
+    };
+
+    let cookie_header = headers
+        .get("cookie")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let user = get_current_user(&ctx, cookie_header).await;
+
+    format::render().view(
+        &v,
+        "shop/product_detail.html",
+        serde_json::json!({
+            "product": product,
+            "current_user": user,
+        }),
+    )
+}
+
 pub fn routes() -> Routes {
     Routes::new()
         .prefix("/shop")
         .add("/home", get(index))
         .add("/search", get(search_page))
         .add("/api/search", get(search_api))
+        .add("/product/{id}", get(get_product_page))
         .add("/api/product/{id}", get(get_product))
         .add("/api/products", get(list))
 }

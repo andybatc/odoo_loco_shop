@@ -5,5 +5,7 @@ pub mod prelude;
 pub mod cart_items;
 pub mod carts;
 pub mod configs;
+pub mod order_items;
+pub mod orders;
 pub mod products;
 pub mod users;

@@ -33,6 +33,24 @@ impl BackgroundWorker<WorkerArgs> for Worker {
                 Error::BadRequest(e.to_string())
             })?;
 
+        let category_map: std::collections::HashMap<i32, String> = {
+            use sea_orm::Statement;
+            let rows = odoo_db
+                .query_all(Statement::from_string(
+                    odoo_db.get_database_backend(),
+                    "SELECT id, name FROM product_category".to_string(),
+                ))
+                .await
+                .unwrap_or_default();
+            rows.into_iter()
+                .filter_map(|r| {
+                    let id: i32 = r.try_get_by_index::<i32>(0).ok()?;
+                    let name: Option<String> = r.try_get_by_index::<String>(1).ok();
+                    name.map(|n| (id, n))
+                })
+                .collect()
+        };
+
         let odoo_products = product_template_odoo::Entity::find()
             .filter(product_template_odoo::Column::IsPublished.eq(true))
             .all(&odoo_db)
@@ -49,12 +67,15 @@ impl BackgroundWorker<WorkerArgs> for Worker {
 
             println!("🔄 Procesando: {} (ID Odoo: {})", name_string, item.id);
 
+            let category_name = category_map.get(&item.categ_id).cloned();
+
             let active_product = products::ActiveModel {
                 odoo_id: Set(Some(item.id)),
                 name: Set(Some(name_string.to_string())),
                 sku: Set(item.default_code.clone()),
                 price: Set(Some(item.list_price.unwrap_or_default())),
                 stock: Set(Some(0.0)),
+                category: Set(category_name),
                 ..Default::default()
             };
 
@@ -65,6 +86,7 @@ impl BackgroundWorker<WorkerArgs> for Worker {
                             products::Column::Name,
                             products::Column::Sku,
                             products::Column::Price,
+                            products::Column::Category,
                         ])
                         .to_owned()
                 )

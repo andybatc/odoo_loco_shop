@@ -2,14 +2,17 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 
-use crate::models::_entities::{cart_items, carts, configs, products, users};
+use crate::models::_entities::{cart_items, carts, configs, order_items, orders, products, users};
+use crate::models::_entities::orders as orders_entity;
 use axum::extract::Query;
 use axum::http::HeaderMap;
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use loco_rs::prelude::*;
+use sea_orm::ActiveValue::Set;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 #[derive(Serialize)]
 pub struct CartItemRender {
@@ -21,7 +24,7 @@ pub struct CartItemRender {
     pub image_filename: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CustomerInfo {
     pub name: String,
     pub email: String,
@@ -31,12 +34,12 @@ pub struct CustomerInfo {
     pub zip: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, ToSchema)]
 pub struct CheckoutRequest {
     pub customer: CustomerInfo,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ToSchema)]
 pub struct CheckoutResponse {
     pub success: bool,
     pub order_name: Option<String>,
@@ -88,12 +91,9 @@ pub async fn checkout_page(
                 let mut product_ids = Vec::new();
                 let mut item_quantities = std::collections::HashMap::new();
 
-                for item in items {
-                    let hex_str = item.product_id.simple().to_string();
-                    if let Ok(prod_id) = i32::from_str_radix(&hex_str, 16) {
-                        product_ids.push(prod_id);
-                        item_quantities.insert(prod_id, item.quantity);
-                    }
+                for item in &items {
+                    product_ids.push(item.product_id);
+                    item_quantities.insert(item.product_id, item.quantity);
                 }
 
                 let db_products = products::Entity::find()
@@ -136,7 +136,16 @@ pub async fn checkout_page(
     )
 }
 
-pub async fn submit_checkout(
+#[utoipa::path(
+    post,
+    path = "/api/checkout",
+    request_body = CheckoutRequest,
+    responses(
+        (status = 200, description = "Checkout result", body = CheckoutResponse)
+    ),
+    tag = "Checkout"
+)]
+pub(crate) async fn submit_checkout(
     State(ctx): State<AppContext>,
     jar: CookieJar,
     Json(params): Json<CheckoutRequest>,
@@ -192,11 +201,8 @@ pub async fn submit_checkout(
     let mut product_ids = Vec::new();
     let mut item_map = std::collections::HashMap::new();
     for item in &items {
-        let hex_str = item.product_id.simple().to_string();
-        if let Ok(prod_id) = i32::from_str_radix(&hex_str, 16) {
-            product_ids.push(prod_id);
-            item_map.insert(prod_id, item.quantity);
-        }
+        product_ids.push(item.product_id);
+        item_map.insert(item.product_id, item.quantity);
     }
 
     let db_products = products::Entity::find()
@@ -205,19 +211,52 @@ pub async fn submit_checkout(
         .await
         .map_err(|e| Error::string(&e.to_string()))?;
 
+    let mut total = sea_orm::prelude::Decimal::ZERO;
     let mut odoo_items = Vec::new();
-    for prod in db_products {
+    for prod in &db_products {
         let qty = *item_map.get(&prod.id).unwrap_or(&1);
-        let price_f64 = prod
-            .price
-            .map(|p| p.to_string().parse::<f64>().unwrap_or(0.0))
-            .unwrap_or(0.0);
+        let price = prod.price.unwrap_or(sea_orm::prelude::Decimal::ZERO);
+        let price_f64 = price.to_string().parse::<f64>().unwrap_or(0.0);
+        let subtotal = price * sea_orm::prelude::Decimal::from(qty as i64);
+        total += subtotal;
         odoo_items.push(serde_json::json!({
             "product_id": prod.id,
-            "name": prod.name.unwrap_or_else(|| "Product".to_string()),
+            "name": prod.name.clone().unwrap_or_else(|| "Product".to_string()),
             "price": price_f64,
             "quantity": qty,
         }));
+    }
+
+    let order_id = Uuid::new_v4();
+    let order = orders_entity::ActiveModel {
+        id: Set(order_id),
+        customer_name: Set(params.customer.name.clone()),
+        customer_email: Set(params.customer.email.clone()),
+        customer_phone: Set(params.customer.phone.clone()),
+        customer_street: Set(params.customer.street.clone()),
+        customer_city: Set(params.customer.city.clone()),
+        customer_zip: Set(params.customer.zip.clone()),
+        total: Set(total),
+        status: Set("pending".to_string()),
+        ..Default::default()
+    };
+    order.insert(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
+
+    for prod in &db_products {
+        let qty = *item_map.get(&prod.id).unwrap_or(&1);
+        let price = prod.price.unwrap_or(sea_orm::prelude::Decimal::ZERO);
+        let subtotal = price * sea_orm::prelude::Decimal::from(qty as i64);
+        let order_item = order_items::ActiveModel {
+            id: Set(Uuid::new_v4()),
+            order_id: Set(order_id),
+            product_id: Set(prod.id),
+            product_name: Set(prod.name.clone().unwrap_or_else(|| "Product".to_string())),
+            price: Set(price),
+            quantity: Set(qty),
+            subtotal: Set(subtotal),
+            ..Default::default()
+        };
+        order_item.insert(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
     }
 
     let config = configs::Entity::find()
@@ -262,6 +301,14 @@ pub async fn submit_checkout(
             if !resp.status().is_success() {
                 let status = resp.status();
                 let body = resp.text().await.unwrap_or_default();
+                let mut failed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
+                    .one(&ctx.db)
+                    .await
+                    .map_err(|e| Error::string(&e.to_string()))?
+                    .ok_or_else(|| Error::string("Order not found"))?
+                    .into();
+                failed_order.status = Set("failed".to_string());
+                failed_order.update(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
                 return Ok((
                     jar,
                     Json(CheckoutResponse {
@@ -279,6 +326,14 @@ pub async fn submit_checkout(
             let odoo_resp: serde_json::Value = resp.json().await.unwrap_or_default();
 
             if odoo_resp.get("error").is_some() {
+                let mut failed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
+                    .one(&ctx.db)
+                    .await
+                    .map_err(|e| Error::string(&e.to_string()))?
+                    .ok_or_else(|| Error::string("Order not found"))?
+                    .into();
+                failed_order.status = Set("failed".to_string());
+                failed_order.update(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
                 return Ok((
                     jar,
                     Json(CheckoutResponse {
@@ -291,6 +346,30 @@ pub async fn submit_checkout(
                             .to_string()),
                     }),
                 ));
+            }
+
+            let order_name = odoo_resp["order_name"]
+                .as_str()
+                .map(|s| s.to_string());
+            let invoice_name = odoo_resp["invoice_name"]
+                .as_str()
+                .map(|s| s.to_string());
+
+            let mut confirmed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
+                .one(&ctx.db)
+                .await
+                .map_err(|e| Error::string(&e.to_string()))?
+                .ok_or_else(|| Error::string("Order not found"))?
+                .into();
+            confirmed_order.status = Set("confirmed".to_string());
+            confirmed_order.odoo_order_name = Set(order_name.clone());
+            confirmed_order.odoo_invoice_name = Set(invoice_name.clone());
+            confirmed_order.update(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
+
+            if let Ok(updated_order) = orders::Entity::find_by_id(order_id).one(&ctx.db).await {
+                if let Some(order_model) = updated_order {
+                    let _ = crate::mailers::order::OrderMailer::send_confirmation(&ctx, &order_model).await;
+                }
             }
 
             cart_items::Entity::delete_many()
@@ -306,13 +385,6 @@ pub async fn submit_checkout(
 
             let jar = jar.remove(Cookie::new(cookie_name, ""));
 
-            let order_name = odoo_resp["order_name"]
-                .as_str()
-                .map(|s| s.to_string());
-            let invoice_name = odoo_resp["invoice_name"]
-                .as_str()
-                .map(|s| s.to_string());
-
             Ok((
                 jar,
                 Json(CheckoutResponse {
@@ -323,15 +395,25 @@ pub async fn submit_checkout(
                 }),
             ))
         }
-        Err(e) => Ok((
-            jar,
-            Json(CheckoutResponse {
-                success: false,
-                order_name: None,
-                invoice_name: None,
-                error: Some(format!("Error de conexión con Odoo: {}", e)),
-            }),
-        )),
+        Err(e) => {
+            let mut failed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
+                .one(&ctx.db)
+                .await
+                .map_err(|e| Error::string(&e.to_string()))?
+                .ok_or_else(|| Error::string("Order not found"))?
+                .into();
+            failed_order.status = Set("failed".to_string());
+            failed_order.update(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
+            Ok((
+                jar,
+                Json(CheckoutResponse {
+                    success: false,
+                    order_name: None,
+                    invoice_name: None,
+                    error: Some(format!("Error de conexión con Odoo: {}", e)),
+                }),
+            ))
+        }
     }
 }
 
