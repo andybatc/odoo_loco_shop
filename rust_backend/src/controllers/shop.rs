@@ -84,8 +84,8 @@ pub async fn index(
             let items = products::Entity::find()
                 .filter(products::Column::IsPublished.eq(true))
                 .order_by_asc(products::Column::Name)
-                .limit(PAGE_SIZE.into())
-                .offset(offset)
+                .limit(Some(PAGE_SIZE as u64))
+                .offset(Some(offset))
                 .all(&ctx.db)
                 .await?;
 

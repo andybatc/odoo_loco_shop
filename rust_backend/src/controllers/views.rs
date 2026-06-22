@@ -2,7 +2,7 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 use crate::controllers::auth as auth_controller;
-use crate::models::_entities::{users, cart_items, carts, products, configs};
+use crate::models::_entities::{users, cart_items, products, configs};
 use crate::models::config_cache;
 use crate::models::users::LoginParams;
 use crate::views::auth::LoginResponse;

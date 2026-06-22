@@ -2,10 +2,8 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 use loco_rs::prelude::*;
-use serde::{Deserialize, Serialize};
 use crate::workers::webhook::{WebhookWorker, WebhookWorkerArgs};
 use crate::controllers::token_auth::AuthToken;
-use axum::http::StatusCode;
 use std::time::Duration;
 
 async fn check_rate_limit(ctx: &AppContext, key: &str, max: i64, window_secs: u64) -> Result<()> {
