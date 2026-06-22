@@ -36,10 +36,12 @@ validator = { version = "0.20" }
 uuid = { version = "1.6", features = ["v4"] }
 include_dir = { version = "0.7" }
 tower = { version = "0.5.3", features = ["buffer", "limit"] }
-tower-http = { version = "0.6.10", features = ["util"] }
+tower-http = { version = "0.6.10", features = ["util", "cors"] }
 base64 = "0.22.1"
 axum-extra = "0.10.3"
 reqwest = { version = "0.12", features = ["json"] }
+utoipa = { version = "5.5", features = ["axum_extras", "uuid", "decimal"] }
+utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 
 [[bin]]
 name = "odoo_shop-cli"

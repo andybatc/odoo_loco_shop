@@ -30,6 +30,17 @@ async fn check_rate_limit(ctx: &AppContext, key: &str, max: i64, window_secs: u6
     Ok(())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/webhooks/odoo/update",
+    request_body = WebhookWorkerArgs,
+    responses(
+        (status = 200, description = "Product update queued"),
+        (status = 401, description = "Invalid webhook token"),
+        (status = 429, description = "Rate limit exceeded")
+    ),
+    tag = "Webhooks"
+)]
 #[debug_handler]
 pub async fn update(
     State(ctx): State<AppContext>,
@@ -42,6 +53,17 @@ pub async fn update(
     format::json::<()>(())
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/webhooks/odoo/bulk-update",
+    request_body = Vec<WebhookWorkerArgs>,
+    responses(
+        (status = 200, description = "Bulk update queued"),
+        (status = 401, description = "Invalid webhook token"),
+        (status = 429, description = "Rate limit exceeded")
+    ),
+    tag = "Webhooks"
+)]
 pub async fn update_bulk(
     State(ctx): State<AppContext>,
     _: AuthToken,

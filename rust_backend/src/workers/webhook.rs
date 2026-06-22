@@ -3,6 +3,7 @@ use loco_rs::prelude::*;
 use sea_orm::{Set,ColumnTrait, EntityTrait, QueryFilter};
 use sea_orm::prelude::Decimal;
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 use std::time::Duration;
 use base64::{Engine as _, engine::general_purpose};
 
@@ -10,7 +11,7 @@ pub struct WebhookWorker {
     pub ctx: AppContext,
 }
 
-#[derive(Deserialize, Debug, Serialize)]
+#[derive(Deserialize, Debug, Serialize, ToSchema)]
 pub struct WebhookWorkerArgs {
     pub odoo_id: i32,
     pub name: Option<String>,
