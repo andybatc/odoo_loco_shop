@@ -2,7 +2,7 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 
-use crate::models::_entities::{cart_items, carts, configs, order_items, orders, products, users};
+use crate::models::_entities::{cart_items, carts, configs, order_items, products, users};
 use crate::models::_entities::orders as orders_entity;
 use axum::extract::Query;
 use axum::http::HeaderMap;
@@ -274,11 +274,11 @@ pub(crate) async fn submit_checkout(
     };
     order.insert(&ctx.db).await?;
 
-    for prod in &db_products {
+    let order_items_to_insert: Vec<order_items::ActiveModel> = db_products.iter().map(|prod| {
         let qty = *item_map.get(&prod.id).unwrap_or(&1);
         let price = prod.price.unwrap_or(sea_orm::prelude::Decimal::ZERO);
         let subtotal = price * sea_orm::prelude::Decimal::from(qty as i64);
-        let order_item = order_items::ActiveModel {
+        order_items::ActiveModel {
             id: Set(Uuid::new_v4()),
             order_id: Set(order_id),
             product_id: Set(prod.id),
@@ -287,9 +287,9 @@ pub(crate) async fn submit_checkout(
             quantity: Set(qty),
             subtotal: Set(subtotal),
             ..Default::default()
-        };
-        order_item.insert(&ctx.db).await?;
-    }
+        }
+    }).collect();
+    order_items::Entity::insert_many(order_items_to_insert).exec(&ctx.db).await?;
 
     let config = configs::Entity::find()
         .filter(configs::Column::Key.eq("webhook_token"))
@@ -333,14 +333,11 @@ pub(crate) async fn submit_checkout(
             if !resp.status().is_success() {
                 let status = resp.status();
                 let body = resp.text().await.unwrap_or_default();
-                let mut failed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
-                    .one(&ctx.db)
-                    .await
-                    ?
-                    .ok_or_else(|| Error::string("Order not found"))?
-                    .into();
-                failed_order.status = Set("failed".to_string());
-                failed_order.update(&ctx.db).await?;
+                orders_entity::ActiveModel {
+                    id: Set(order_id),
+                    status: Set("failed".to_string()),
+                    ..Default::default()
+                }.update(&ctx.db).await?;
                 return Ok((
                     jar,
                     Json(CheckoutResponse {
@@ -359,14 +356,11 @@ pub(crate) async fn submit_checkout(
             let odoo_resp: serde_json::Value = resp.json().await.unwrap_or_default();
 
             if odoo_resp.get("error").is_some() {
-                let mut failed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
-                    .one(&ctx.db)
-                    .await
-                    ?
-                    .ok_or_else(|| Error::string("Order not found"))?
-                    .into();
-                failed_order.status = Set("failed".to_string());
-                failed_order.update(&ctx.db).await?;
+                orders_entity::ActiveModel {
+                    id: Set(order_id),
+                    status: Set("failed".to_string()),
+                    ..Default::default()
+                }.update(&ctx.db).await?;
                 return Ok((
                     jar,
                     Json(CheckoutResponse {
@@ -389,22 +383,15 @@ pub(crate) async fn submit_checkout(
                 .as_str()
                 .map(|s| s.to_string());
 
-            let mut confirmed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
-                .one(&ctx.db)
-                .await
-                ?
-                .ok_or_else(|| Error::string("Order not found"))?
-                .into();
-            confirmed_order.status = Set("confirmed".to_string());
-            confirmed_order.odoo_order_name = Set(order_name.clone());
-            confirmed_order.odoo_invoice_name = Set(invoice_name.clone());
-            confirmed_order.update(&ctx.db).await?;
+            let confirmed_model = orders_entity::ActiveModel {
+                id: Set(order_id),
+                status: Set("confirmed".to_string()),
+                odoo_order_name: Set(order_name.clone()),
+                odoo_invoice_name: Set(invoice_name.clone()),
+                ..Default::default()
+            }.update(&ctx.db).await?;
 
-            if let Ok(updated_order) = orders::Entity::find_by_id(order_id).one(&ctx.db).await {
-                if let Some(order_model) = updated_order {
-                    let _ = crate::mailers::order::OrderMailer::send_confirmation(&ctx, &order_model).await;
-                }
-            }
+            let _ = crate::mailers::order::OrderMailer::send_confirmation(&ctx, &confirmed_model).await;
 
             cart_items::Entity::delete_many()
                 .filter(cart_items::Column::CartId.eq(cart_uuid))
@@ -431,14 +418,11 @@ pub(crate) async fn submit_checkout(
             ))
         }
         Err(e) => {
-            let mut failed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
-                .one(&ctx.db)
-                .await
-                ?
-                .ok_or_else(|| Error::string("Order not found"))?
-                .into();
-            failed_order.status = Set("failed".to_string());
-            failed_order.update(&ctx.db).await?;
+            orders_entity::ActiveModel {
+                id: Set(order_id),
+                status: Set("failed".to_string()),
+                ..Default::default()
+            }.update(&ctx.db).await?;
             Ok((
                 jar,
                 Json(CheckoutResponse {
