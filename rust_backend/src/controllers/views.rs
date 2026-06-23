@@ -119,7 +119,7 @@ async fn login_web(
     // --- MANEJO DE COOKIES ---
     let jwt_config = ctx.config.get_jwt_config()?;
     let cookie = format!(
-        "token={}; Path=/; HttpOnly; SameSite=Lax; Max-Age={}",
+        "token={}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
         login_res.token, jwt_config.expiration
     );
 
@@ -174,6 +174,7 @@ pub async fn config_page(
     let csrf_cookie = Cookie::build(("csrf_token", csrf_token.clone()))
         .path("/")
         .http_only(true)
+        .same_site(axum_extra::extract::cookie::SameSite::Strict)
         .build();
     let jar = jar.add(csrf_cookie);
 

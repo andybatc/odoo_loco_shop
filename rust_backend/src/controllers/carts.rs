@@ -112,6 +112,7 @@ pub async fn add_to_cart(
         let cookie = Cookie::build((cookie_name, cart.id.to_string()))
             .path("/")
             .http_only(true)
+            .same_site(axum_extra::extract::cookie::SameSite::Lax)
             .build();
         response_jar = response_jar.add(cookie);
     }
