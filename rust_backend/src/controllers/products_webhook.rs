@@ -6,7 +6,7 @@ use crate::workers::webhook::{WebhookWorker, WebhookWorkerArgs};
 use crate::controllers::token_auth::AuthToken;
 use std::time::Duration;
 
-async fn check_rate_limit(ctx: &AppContext, key: &str, max: i64, window_secs: u64) -> Result<()> {
+pub(crate) async fn check_rate_limit(ctx: &AppContext, key: &str, max: i64, window_secs: u64) -> Result<()> {
     let cache_key = format!("rate_limit:{}", key);
 
     let count = ctx

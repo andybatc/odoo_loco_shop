@@ -14,16 +14,18 @@ use migration::Migrator;
 use std::path::Path;
 use loco_rs::controller::views::{engines::TeraView, ViewEngine};
 use axum::{Extension, Router};
+use axum::http::HeaderValue;
 use axum::routing::get_service;
 use loco_rs::prelude::*;
 use tower_http::services::ServeDir;
 use tower_http::cors::CorsLayer;
+use tower_http::limit::RequestBodyLimitLayer;
 use loco_rs::controller::Routes;
 use utoipa::OpenApi;
 use std::env;
 
 #[allow(unused_imports)]
-use crate::{controllers, models::_entities::users, tasks, workers::downloader::DownloadWorker};
+use crate::{controllers, models::_entities::users, middleware, tasks, workers::downloader::DownloadWorker};
 
 pub struct App;
 #[async_trait]
@@ -96,11 +98,19 @@ impl Hooks for App {
         // 3. Construimos el motor Tera
         let tera_engine = TeraView::build()?;
 
-        // 4. CORS para desarrollo
+        // 4. CORS - restrictivo, solo origenes conocidos
         let cors = CorsLayer::new()
-            .allow_origin(tower_http::cors::Any)
-            .allow_methods(tower_http::cors::Any)
-            .allow_headers(tower_http::cors::Any);
+            .allow_origin(tower_http::cors::AllowOrigin::predicate(
+                |origin: &HeaderValue, _| {
+                    let origin_str = origin.to_str().unwrap_or("");
+                    origin_str == "http://localhost:5150"
+                        || origin_str == "http://localhost:5173"
+                        || origin_str.starts_with("http://127.0.0.1")
+                },
+            ))
+            .allow_methods([axum::http::Method::GET, axum::http::Method::POST, axum::http::Method::PUT, axum::http::Method::DELETE, axum::http::Method::OPTIONS])
+            .allow_headers([axum::http::header::CONTENT_TYPE, axum::http::header::AUTHORIZATION, axum::http::header::HeaderName::from_static("x-csrf-token")])
+            .allow_credentials(true);
 
         // 5. OpenAPI / Swagger UI
         use utoipa_swagger_ui::SwaggerUi;
@@ -108,6 +118,8 @@ impl Hooks for App {
 
         Ok(router
             .layer(axum::middleware::from_fn(error_page_middleware))
+            .layer(axum::middleware::from_fn(middleware::security_headers::add_security_headers))
+            .layer(RequestBodyLimitLayer::new(1024 * 1024))
             .layer(cors)
             .layer(Extension(ViewEngine::new(tera_engine))))
     }

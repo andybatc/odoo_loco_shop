@@ -70,9 +70,8 @@ pub async fn home_page(State(ctx): State<AppContext>, headers: HeaderMap) -> Res
 }
 
 async fn login_display(State(ctx): State<AppContext>, headers: HeaderMap) -> Result<Response> {
-    // Esto te dirá en la terminal desde dónde se está ejecutando el programa
     if let Ok(current_dir) = std::env::current_dir() {
-        println!("Directorio actual de ejecución: {:?}", current_dir);
+        tracing::info!("Directorio actual de ejecución: {:?}", current_dir);
     }
     let cookie_header = headers
         .get("cookie")
@@ -83,8 +82,7 @@ async fn login_display(State(ctx): State<AppContext>, headers: HeaderMap) -> Res
 
     let html_path = "assets/views/auth/login.html";
     let html = std::fs::read_to_string(html_path).map_err(|e| {
-        // Imprime el error real de sistema (ej. Permission Denied o No such file)
-        println!("Error leyendo el HTML ({}) : {:?}", html_path, e);
+        tracing::error!("Error leyendo el HTML ({}) : {:?}", html_path, e);
         Error::string("No se encuentra la plantilla de login")
     })?;
 
@@ -113,7 +111,7 @@ async fn login_web(
     // Nota: Loco devuelve LoginResponse en formato JSON
     let body_bytes = axum::body::to_bytes(api_response.into_body(), 1024 * 10)
         .await
-        .map_err(|e| Error::string(&e.to_string()))?;
+        .map_err(|_| Error::string("Error al leer respuesta de autenticación"))?;
 
     let login_res: LoginResponse = serde_json::from_slice(&body_bytes)
         .map_err(|_| Error::string("Error al procesar respuesta de autenticación"))?;
@@ -130,7 +128,7 @@ async fn login_web(
         .header("Set-Cookie", cookie)
         .header("HX-Redirect", "/ui/auth/config")
         .body(axum::body::Body::empty())
-        .map_err(|e| Error::string(&e.to_string()))
+        .map_err(|_| Error::string("Error al generar respuesta de autenticación"))
 }
 
 async fn register_display() -> Result<Response> {
@@ -334,7 +332,7 @@ async fn handle_config_update(
     let response = Response::builder()
         .header("HX-Refresh", "true")
         .body(axum::body::Body::empty())
-        .map_err(|e| Error::string(&e.to_string()))?;
+        .map_err(|_| Error::string("Error al generar respuesta"))?;
     Ok((jar, response))
 }
 
