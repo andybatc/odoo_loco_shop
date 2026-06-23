@@ -15,6 +15,7 @@ mod m20260622_000001_fix_cart_items_product_type;
 mod m20260622_000002_create_orders;
 mod m20260622_000003_add_category_to_products;
 mod m20260622_000004_add_role_to_users;
+mod m20260622_000005_add_performance_indexes;
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -34,6 +35,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260622_000002_create_orders::Migration),
             Box::new(m20260622_000003_add_category_to_products::Migration),
             Box::new(m20260622_000004_add_role_to_users::Migration),
+            Box::new(m20260622_000005_add_performance_indexes::Migration),
             // inject-above (do not remove this comment)
         ]
     }

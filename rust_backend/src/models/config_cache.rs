@@ -19,7 +19,7 @@ pub async fn get_cached_config(ctx: &AppContext, key: &str) -> Result<Option<Str
     if let Some(ref v) = val {
         let _ = ctx
             .cache
-            .insert_with_expiry(&cache_key, v, Duration::from_secs(60))
+            .insert_with_expiry(&cache_key, v, Duration::from_secs(300))
             .await;
     }
 

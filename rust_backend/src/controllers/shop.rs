@@ -16,14 +16,13 @@ use utoipa::ToSchema;
 use std::time::Duration;
 
 #[debug_handler]
-pub async fn list(State(_ctx): State<AppContext>) -> Result<Response> {
-    // 1. Conexión a Odoo
-    // Nota: Más adelante moveremos esto a un recurso global para no conectar en cada request
-    let odoo_db = Database::connect("postgres://odoo:postgres@localhost:5432/odoo_prod")
-        .await
-        .map_err(|e| Error::BadRequest(e.to_string()))?;
+pub async fn list(State(ctx): State<AppContext>) -> Result<Response> {
+    let odoo_uri = ctx.config.settings.as_ref().and_then(|s| s["odoo_database"]["uri"].as_str()).unwrap_or("postgres://odoo:postgres@localhost:5432/odoo_prod");
 
-    // 2. Consulta
+    let odoo_db = Database::connect(odoo_uri)
+        .await
+        .map_err(|_| Error::BadRequest("Error al conectar con el catálogo de productos".to_string()))?;
+
     let products = product_template_odoo::Entity::find()
         .filter(product_template_odoo::Column::IsPublished.eq(true))
         .limit(10)
@@ -119,19 +118,27 @@ pub async fn index(
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
-    let categories: Vec<String> = products::Entity::find()
-        .filter(products::Column::IsPublished.eq(true))
-        .filter(products::Column::Category.is_not_null())
-        .all(&ctx.db)
-        .await
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|p| p.category)
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .collect();
-    let mut categories: Vec<String> = categories;
-    categories.sort();
+    let categories_cache_key = format!("categories:v{}", ver);
+    let categories: Vec<String> = match ctx.cache.get::<Vec<String>>(&categories_cache_key).await {
+        Ok(Some(cached)) => cached,
+        _ => {
+            let cats: Vec<String> = products::Entity::find()
+                .filter(products::Column::IsPublished.eq(true))
+                .filter(products::Column::Category.is_not_null())
+                .all(&ctx.db)
+                .await
+                .unwrap_or_default()
+                .into_iter()
+                .filter_map(|p| p.category)
+                .collect::<std::collections::HashSet<_>>()
+                .into_iter()
+                .collect();
+            let mut cats = cats;
+            cats.sort();
+            let _ = ctx.cache.insert_with_expiry(&categories_cache_key, &cats, Duration::from_secs(300)).await;
+            cats
+        }
+    };
 
     format::render().view(
         &v,
@@ -327,7 +334,7 @@ pub async fn get_product(
     State(ctx): State<AppContext>,
     Path(id): Path<i32>,
 ) -> Result<Json<ProductDetail>> {
-    let cache_key = format!("product:local:{}", id);
+    let cache_key = format!("product:api:{}", id);
 
     if let Ok(Some(cached)) = ctx.cache.get::<ProductDetail>(&cache_key).await {
         tracing::info!("⚡ Cache hit: producto {}", id);
