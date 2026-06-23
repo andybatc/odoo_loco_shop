@@ -24,7 +24,19 @@ pub async fn add_to_cart(
     Json(params): Json<AddItemParams>,
 ) -> Result<(CookieJar, Json<serde_json::Value>), Error> {
 
-    let mut current_user_id: Option<Uuid> = None;
+    // 0. Validar que el producto exista y tenga stock
+    let product = products::Entity::find_by_id(params.product_id)
+        .one(&ctx.db)
+        .await?
+        .ok_or_else(|| Error::BadRequest("Producto no encontrado".to_string()))?;
+
+    if let Some(stock) = product.stock {
+        if stock <= 0.0 {
+            return Err(Error::BadRequest("Producto sin stock disponible".to_string()));
+        }
+    }
+
+    let current_user_id: Option<Uuid> = None;
 
     if let Some(_auth_header) = headers.get("Authorization") {
         // TODO: Decodificar JWT si se requiere en el futuro
@@ -65,10 +77,22 @@ pub async fn add_to_cart(
         .one(&ctx.db)
         .await?;
 
+    let current_qty = existing_item.as_ref().map(|i| i.quantity).unwrap_or(0);
+    let new_qty = current_qty + 1;
+
+    // 4. Validar stock con la nueva cantidad total
+    if let Some(stock) = product.stock {
+        if new_qty as f32 > stock {
+            return Err(Error::BadRequest(
+                format!("Stock insuficiente. Disponible: {}, en tu carrito: {}", stock as i32, current_qty),
+            ));
+        }
+    }
+
     if let Some(item) = existing_item {
         // Si ya existe, incrementamos la cantidad
         let mut active_item: cart_items::ActiveModel = item.into();
-        active_item.quantity = Set(active_item.quantity.unwrap() + 1);
+        active_item.quantity = Set(new_qty);
         active_item.update(&ctx.db).await?;
     } else {
         // Si es nuevo, lo insertamos con cantidad inicial de 1
@@ -76,7 +100,7 @@ pub async fn add_to_cart(
             id: Set(Uuid::new_v4()),
             cart_id: Set(cart.id),
             product_id: Set(params.product_id),
-            quantity: Set(1),
+            quantity: Set(new_qty),
             ..Default::default()
         };
         new_item.insert(&ctx.db).await?;
@@ -109,7 +133,7 @@ async fn find_cart_from_cookie(jar: &CookieJar, ctx: &AppContext) -> Result<Opti
             return carts::Entity::find_by_id(parsed_uuid)
                 .one(&ctx.db)
                 .await
-                .map_err(|e| Error::string(&e.to_string()));
+                .map_err(|_| Error::string("Error al buscar carrito"));
         }
     }
     Ok(None)
@@ -227,6 +251,20 @@ pub async fn update_cart_item_quantity(
         .one(&ctx.db)
         .await?
         .ok_or_else(|| Error::NotFound)?;
+
+    // Validar stock antes de actualizar
+    let product = products::Entity::find_by_id(item.product_id)
+        .one(&ctx.db)
+        .await?
+        .ok_or_else(|| Error::NotFound)?;
+
+    if let Some(stock) = product.stock {
+        if params.quantity as f32 > stock {
+            return Err(Error::BadRequest(
+                format!("Stock insuficiente. Disponible: {}", stock as i32),
+            ));
+        }
+    }
 
     let mut active_item: cart_items::ActiveModel = item.into();
     active_item.quantity = Set(params.quantity);

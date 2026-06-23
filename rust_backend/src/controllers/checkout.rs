@@ -44,6 +44,7 @@ pub struct CheckoutResponse {
     pub success: bool,
     pub order_name: Option<String>,
     pub invoice_name: Option<String>,
+    pub total: Option<f64>,
     pub error: Option<String>,
 }
 
@@ -150,6 +151,33 @@ pub(crate) async fn submit_checkout(
     jar: CookieJar,
     Json(params): Json<CheckoutRequest>,
 ) -> Result<(CookieJar, Json<CheckoutResponse>)> {
+    let email_re = regex::Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").unwrap();
+    if !email_re.is_match(&params.customer.email) {
+        return Ok((
+            jar,
+            Json(CheckoutResponse {
+                success: false,
+                order_name: None,
+                invoice_name: None,
+                total: None,
+                error: Some("Email inválido".to_string()),
+            }),
+        ));
+    }
+
+    if params.customer.name.trim().is_empty() {
+        return Ok((
+            jar,
+            Json(CheckoutResponse {
+                success: false,
+                order_name: None,
+                invoice_name: None,
+                total: None,
+                error: Some("El nombre es obligatorio".to_string()),
+            }),
+        ));
+    }
+
     let cookie_name = "rsv_cart_session";
 
     let cart_uuid = match jar.get(cookie_name) {
@@ -162,6 +190,7 @@ pub(crate) async fn submit_checkout(
                         success: false,
                         order_name: None,
                         invoice_name: None,
+                        total: None,
                         error: Some("Carrito no encontrado".to_string()),
                     }),
                 ));
@@ -174,6 +203,7 @@ pub(crate) async fn submit_checkout(
                     success: false,
                     order_name: None,
                     invoice_name: None,
+                    total: None,
                     error: Some("Carrito no encontrado".to_string()),
                 }),
             ));
@@ -183,8 +213,7 @@ pub(crate) async fn submit_checkout(
     let items = cart_items::Entity::find()
         .filter(cart_items::Column::CartId.eq(cart_uuid))
         .all(&ctx.db)
-        .await
-        .map_err(|e| Error::string(&e.to_string()))?;
+        .await?;
 
     if items.is_empty() {
         return Ok((
@@ -193,6 +222,7 @@ pub(crate) async fn submit_checkout(
                 success: false,
                 order_name: None,
                 invoice_name: None,
+                total: None,
                 error: Some("El carrito está vacío".to_string()),
             }),
         ));
@@ -209,7 +239,7 @@ pub(crate) async fn submit_checkout(
         .filter(products::Column::Id.is_in(product_ids))
         .all(&ctx.db)
         .await
-        .map_err(|e| Error::string(&e.to_string()))?;
+        ?;
 
     let mut total = sea_orm::prelude::Decimal::ZERO;
     let mut odoo_items = Vec::new();
@@ -227,6 +257,8 @@ pub(crate) async fn submit_checkout(
         }));
     }
 
+    let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
+
     let order_id = Uuid::new_v4();
     let order = orders_entity::ActiveModel {
         id: Set(order_id),
@@ -240,7 +272,7 @@ pub(crate) async fn submit_checkout(
         status: Set("pending".to_string()),
         ..Default::default()
     };
-    order.insert(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
+    order.insert(&ctx.db).await?;
 
     for prod in &db_products {
         let qty = *item_map.get(&prod.id).unwrap_or(&1);
@@ -256,14 +288,14 @@ pub(crate) async fn submit_checkout(
             subtotal: Set(subtotal),
             ..Default::default()
         };
-        order_item.insert(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
+        order_item.insert(&ctx.db).await?;
     }
 
     let config = configs::Entity::find()
         .filter(configs::Column::Key.eq("webhook_token"))
         .one(&ctx.db)
         .await
-        .map_err(|e| Error::string(&e.to_string()))?;
+        ?;
 
     let token = config.and_then(|c| c.value).unwrap_or_default();
 
@@ -304,17 +336,18 @@ pub(crate) async fn submit_checkout(
                 let mut failed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
                     .one(&ctx.db)
                     .await
-                    .map_err(|e| Error::string(&e.to_string()))?
+                    ?
                     .ok_or_else(|| Error::string("Order not found"))?
                     .into();
                 failed_order.status = Set("failed".to_string());
-                failed_order.update(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
+                failed_order.update(&ctx.db).await?;
                 return Ok((
                     jar,
                     Json(CheckoutResponse {
                         success: false,
                         order_name: None,
                         invoice_name: None,
+                        total: Some(total_f64),
                         error: Some(format!(
                             "Odoo respondió con error {}: {}",
                             status, body
@@ -329,17 +362,18 @@ pub(crate) async fn submit_checkout(
                 let mut failed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
                     .one(&ctx.db)
                     .await
-                    .map_err(|e| Error::string(&e.to_string()))?
+                    ?
                     .ok_or_else(|| Error::string("Order not found"))?
                     .into();
                 failed_order.status = Set("failed".to_string());
-                failed_order.update(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
+                failed_order.update(&ctx.db).await?;
                 return Ok((
                     jar,
                     Json(CheckoutResponse {
                         success: false,
                         order_name: None,
                         invoice_name: None,
+                        total: Some(total_f64),
                         error: Some(odoo_resp["error"]
                             .as_str()
                             .unwrap_or("Error desconocido de Odoo")
@@ -358,13 +392,13 @@ pub(crate) async fn submit_checkout(
             let mut confirmed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
                 .one(&ctx.db)
                 .await
-                .map_err(|e| Error::string(&e.to_string()))?
+                ?
                 .ok_or_else(|| Error::string("Order not found"))?
                 .into();
             confirmed_order.status = Set("confirmed".to_string());
             confirmed_order.odoo_order_name = Set(order_name.clone());
             confirmed_order.odoo_invoice_name = Set(invoice_name.clone());
-            confirmed_order.update(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
+            confirmed_order.update(&ctx.db).await?;
 
             if let Ok(updated_order) = orders::Entity::find_by_id(order_id).one(&ctx.db).await {
                 if let Some(order_model) = updated_order {
@@ -376,12 +410,12 @@ pub(crate) async fn submit_checkout(
                 .filter(cart_items::Column::CartId.eq(cart_uuid))
                 .exec(&ctx.db)
                 .await
-                .map_err(|e| Error::string(&e.to_string()))?;
+                ?;
 
             carts::Entity::delete_by_id(cart_uuid)
                 .exec(&ctx.db)
                 .await
-                .map_err(|e| Error::string(&e.to_string()))?;
+                ?;
 
             let jar = jar.remove(Cookie::new(cookie_name, ""));
 
@@ -391,6 +425,7 @@ pub(crate) async fn submit_checkout(
                     success: true,
                     order_name,
                     invoice_name,
+                    total: Some(total_f64),
                     error: None,
                 }),
             ))
@@ -399,17 +434,18 @@ pub(crate) async fn submit_checkout(
             let mut failed_order: orders_entity::ActiveModel = orders::Entity::find_by_id(order_id)
                 .one(&ctx.db)
                 .await
-                .map_err(|e| Error::string(&e.to_string()))?
+                ?
                 .ok_or_else(|| Error::string("Order not found"))?
                 .into();
             failed_order.status = Set("failed".to_string());
-            failed_order.update(&ctx.db).await.map_err(|e| Error::string(&e.to_string()))?;
+            failed_order.update(&ctx.db).await?;
             Ok((
                 jar,
                 Json(CheckoutResponse {
                     success: false,
                     order_name: None,
                     invoice_name: None,
+                    total: Some(total_f64),
                     error: Some(format!("Error de conexión con Odoo: {}", e)),
                 }),
             ))

@@ -3,10 +3,25 @@
 {% block title %}Órdenes - Admin OdooShop{% endblock title %}
 
 {% block content %}
-<div class="container mx-auto py-8 px-4">
+<div id="orders-section" class="container mx-auto py-8 px-4">
     <div class="flex items-center justify-between mb-8">
         <h1 class="text-3xl font-bold text-gray-800">Todas las Órdenes</h1>
         <a href="/admin/dashboard" class="text-blue-600 hover:underline text-sm">&larr; Volver al dashboard</a>
+    </div>
+
+    <div class="mb-4 flex gap-2">
+        <a href="/admin/orders"
+           class="px-3 py-1.5 rounded-lg text-sm font-medium {% if current_status is not defined or current_status is none or current_status == '' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}"
+           hx-get="/admin/orders" hx-target="#orders-section" hx-push-url="true" hx-select="#orders-section" hx-swap="outerHTML">Todas</a>
+        <a href="/admin/orders?status=pending"
+           class="px-3 py-1.5 rounded-lg text-sm font-medium {% if current_status == 'pending' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}"
+           hx-get="/admin/orders?status=pending" hx-target="#orders-section" hx-push-url="true" hx-select="#orders-section" hx-swap="outerHTML">Pendientes</a>
+        <a href="/admin/orders?status=confirmed"
+           class="px-3 py-1.5 rounded-lg text-sm font-medium {% if current_status == 'confirmed' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}"
+           hx-get="/admin/orders?status=confirmed" hx-target="#orders-section" hx-push-url="true" hx-select="#orders-section" hx-swap="outerHTML">Confirmadas</a>
+        <a href="/admin/orders?status=failed"
+           class="px-3 py-1.5 rounded-lg text-sm font-medium {% if current_status == 'failed' %}bg-blue-600 text-white{% else %}bg-gray-100 text-gray-600 hover:bg-gray-200{% endif %}"
+           hx-get="/admin/orders?status=failed" hx-target="#orders-section" hx-push-url="true" hx-select="#orders-section" hx-swap="outerHTML">Fallidas</a>
     </div>
 
     <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
@@ -45,6 +60,27 @@
                 </tbody>
             </table>
         </div>
+
+        {% if total_pages > 1 %}
+        <div class="flex items-center justify-between mt-6 pt-4 border-t border-gray-100">
+            <p class="text-sm text-gray-500">Página {{ page }} de {{ total_pages }}</p>
+            <div class="flex gap-2">
+                {% if page > 1 %}
+                <a href="/admin/orders?page={{ page - 1 }}{% if current_status %}&status={{ current_status }}{% endif %}"
+                   class="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200"
+                   hx-get="/admin/orders?page={{ page - 1 }}{% if current_status %}&status={{ current_status }}{% endif %}"
+                   hx-target="#orders-section" hx-push-url="true" hx-select="#orders-section" hx-swap="outerHTML">Anterior</a>
+                {% endif %}
+                {% if page < total_pages %}
+                <a href="/admin/orders?page={{ page + 1 }}{% if current_status %}&status={{ current_status }}{% endif %}"
+                   class="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-600 hover:bg-gray-200"
+                   hx-get="/admin/orders?page={{ page + 1 }}{% if current_status %}&status={{ current_status }}{% endif %}"
+                   hx-target="#orders-section" hx-push-url="true" hx-select="#orders-section" hx-swap="outerHTML">Siguiente</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+
         {% else %}
         <p class="text-gray-500 text-center py-8">No hay órdenes registradas.</p>
         {% endif %}
