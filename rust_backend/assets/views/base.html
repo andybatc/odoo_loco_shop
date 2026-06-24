@@ -44,11 +44,11 @@
                     </div>
 
                     <div class="p-4 flex flex-col gap-2">
+                        {% if current_user and current_user.role == "admin" %}
                         <div class="text-xs text-gray-500 uppercase font-bold mb-2">Configuración</div>
                         <a href="/ui/auth/config"
                            class="block px-4 py-2 text-sm text-gray-200 hover:bg-slate-800 rounded transition">Integración
                             Odoo</a>
-                        {% if current_user and current_user.role == "admin" %}
                         <a href="/admin/dashboard"
                            class="block px-4 py-2 text-sm text-gray-200 hover:bg-slate-800 rounded transition">Panel
                             Admin</a>

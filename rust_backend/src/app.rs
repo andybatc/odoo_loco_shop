@@ -70,13 +70,15 @@ impl Hooks for App {
             .add_route(controllers::admin::routes())
     }
     async fn after_routes(router: Router, _ctx: &AppContext) -> Result<Router> {
-        // Middleware para reemplazar páginas de error 500
+        // Middleware para reemplazar páginas de error 401/403/500
         async fn error_page_middleware(
             req: axum::http::Request<axum::body::Body>,
             next: axum::middleware::Next,
         ) -> axum::response::Response {
             let response = next.run(req).await;
-            if response.status() == axum::http::StatusCode::INTERNAL_SERVER_ERROR {
+            let status = response.status();
+
+            if status == axum::http::StatusCode::INTERNAL_SERVER_ERROR {
                 if let Ok(body) = std::fs::read_to_string("assets/static/500.html") {
                     return axum::response::Response::builder()
                         .status(axum::http::StatusCode::INTERNAL_SERVER_ERROR)
@@ -85,6 +87,24 @@ impl Hooks for App {
                         .unwrap();
                 }
             }
+
+            if (status == axum::http::StatusCode::UNAUTHORIZED
+                || status == axum::http::StatusCode::FORBIDDEN)
+                && response
+                    .headers()
+                    .get("content-type")
+                    .and_then(|v| v.to_str().ok())
+                    .map_or(true, |ct| !ct.starts_with("application/json"))
+            {
+                if let Ok(body) = std::fs::read_to_string("assets/static/403.html") {
+                    return axum::response::Response::builder()
+                        .status(status)
+                        .header("content-type", "text/html")
+                        .body(axum::body::Body::from(body))
+                        .unwrap();
+                }
+            }
+
             response
         }
 
