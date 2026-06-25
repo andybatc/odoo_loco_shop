@@ -12,27 +12,43 @@ desacoplado en Rust (Loco.rs) con Redis para caché y colas.
 
 ---
 
+## Quick Start
+
+```bash
+git clone git@github.com:andybatc/odoo_loco_shop.git
+cd odoo_loco_shop/rust_backend
+export DATABASE_URL="postgres://postgres:postgres@localhost:5432/odoo_shop_development"
+export REDIS_URL="redis://127.0.0.1"
+cargo loco start
+```
+
+Servidor en `http://localhost:5150`. Requiere PostgreSQL y Redis.
+
+---
+
 ## Tabla de Contenidos
 
+- [Quick Start](#quick-start)
 - [Stack](#stack)
 - [Arquitectura](#arquitectura)
-- [Caracteristicas](#caracteristicas)
+- [Características](#caracteristicas)
 - [Estructura del Proyecto](#estructura-del-proyecto)
 - [Requisitos](#requisitos)
-- [Instalacion](#instalacion)
+- [Instalación](#instalacion)
   - [Backend Rust](#backend-rust)
   - [Addons Odoo](#addons-odoo)
-- [Configuracion](#configuracion)
+- [Configuración](#configuración)
 - [Uso](#uso)
 - [API](#api)
 - [Testing](#testing)
+- [Contribuir](#contribuir)
 - [Licencia](#licencia)
 
 ---
 
 ## Stack
 
-| Componente | Tecnologia |
+| Componente | Tecnología |
 |------------|-----------|
 | Backend web | Rust 2021, Loco.rs 0.16 (Axum 0.8), SeaORM 1.1 |
 | Frontend | Vue 3 (global build), Tailwind CSS, Tera templates |
@@ -55,29 +71,29 @@ Navegador ──► Rust Backend (:5150) ──► PostgreSQL (shop)
 
 - El sitio web corre en Rust (Loco.rs), no en Odoo.
 - Los productos se sincronizan desde Odoo al backend local via webhooks
-  (Odoo -> Rust) o mediante sincronizacion masiva via DB directa (CLI).
-- Redis se usa para cachear el catalogo de productos y como cola de
-  workers asincronos.
+  (Odoo -> Rust) o mediante sincronización masiva via DB directa (CLI).
+- Redis se usa para cachear el catálogo de productos y como cola de
+  workers asíncronos.
 - Los pedidos se crean en Odoo desde Rust via HTTP (endpoint propio con
-  autenticacion por Bearer token).
+  autenticación por Bearer token).
 
 ---
 
-## Caracteristicas
+## Características
 
-- **Catalogo web**: Listado de productos con busqueda, cacheado en Redis.
-- **Sincronizacion Odoo**: Webhooks en creacion/actualizacion de productos
+- **Catálogo web**: Listado de productos con búsqueda, cacheado en Redis.
+- **Sincronización Odoo**: Webhooks en creación/actualización de productos
   desde Odoo al backend Rust.
-- **Sincronizacion masiva**: CLI task que lee la base de datos de Odoo
+- **Sincronización masiva**: CLI task que lee la base de datos de Odoo
   directamente y pobla la tabla local.
 - **Carrito de compras**: Carrito persistente via cookie (`rsv_cart_session`)
   con soporte para usuarios autenticados e invitados.
-- **Checkout**: Pagina de confirmacion con formulario de datos de envio.
+- **Checkout**: Página de confirmación con formulario de datos de envío.
   Al confirmar, se crea una orden de venta en Odoo con factura validada.
-- **Autenticacion**: JWT (Loco), magic-link, registro y login via formularios
+- **Autenticación**: JWT (Loco), magic-link, registro y login via formularios
   web o API JSON.
-- **Gestor de configuracion**: UI web para configurar el token de
-  autenticacion de los webhooks.
+- **Gestor de configuración**: UI web para configurar el token de
+  autenticación de los webhooks.
 - **Tema Odoo**: Conjunto de addons MuK para personalizar la interfaz
   backend de Odoo (sidebar, colores, dialogs, chatter).
 
@@ -90,21 +106,21 @@ rust_backend/               # Backend Rust (Loco.rs)
   src/
     bin/main.rs             # Entry point
     app.rs                  # Hooks: rutas, workers, tareas
-    lib.rs                  # Modulos
+    lib.rs                  # Módulos
     controllers/
       auth.rs               # API auth (login, register, magic-link)
       carts.rs              # API carrito (POST /api/carts)
-      checkout.rs           # Checkout + confirmacion y success page
-      config.rs             # API configuracion (webhook token)
-      homepage.rs           # Pagina de inicio
+      checkout.rs           # Checkout + confirmación y success page
+      config.rs             # API configuración (webhook token)
+      homepage.rs           # Página de inicio
       products_webhook.rs   # Webhooks Odoo -> Rust
-      shop.rs               # Catalogo de productos
+      shop.rs               # Catálogo de productos
       token_auth.rs         # Extractor de token Bearer
-      views.rs              # Paginas web (login, register, carrito, config)
+      views.rs              # Páginas web (login, register, carrito, config)
     models/                 # Modelos SeaORM + _entities/ (codegen)
     workers/
       webhook.rs            # Worker que procesa webhooks de Odoo
-      product_sync.rs       # Worker de sincronizacion masiva
+      product_sync.rs       # Worker de sincronización masiva
     tasks/
       sync.rs               # CLI task para sincronizar productos
   config/
@@ -113,16 +129,16 @@ rust_backend/               # Backend Rust (Loco.rs)
   migration/                # Migraciones SeaORM (8 tablas)
   assets/
     views/                  # Plantillas Tera
-    static/                 # CSS, JS, imagenes
-  storage/products/         # Imagenes de productos
-  tests/                    # Tests de integracion
+    static/                 # CSS, JS, imágenes
+  storage/products/         # Imágenes de productos
+  tests/                    # Tests de integración
 
 odoo_custom_addons/
-  odoo_rust_sync/           # Addon de sincronizacion Odoo -> Rust
+  odoo_rust_sync/           # Addon de sincronización Odoo -> Rust
   muk_web_theme/            # Tema backend Odoo
-  muk_web_dialog/           # Dialogos a pantalla completa
+  muk_web_dialog/           # Diálogos a pantalla completa
   muk_web_chatter/          # Mejoras en el chatter
-  muk_web_colors/           # Personalizacion de colores
+  muk_web_colors/           # Personalización de colores
   muk_web_appsbar/          # Barra lateral de apps
 ```
 
@@ -134,12 +150,12 @@ odoo_custom_addons/
 - PostgreSQL 13+
 - Redis 6+
 - Python 3.12
-- Odoo 18.0 (Community o Enterprise) con los modulos `sale` y `account`
+- Odoo 18.0 (Community o Enterprise) con los módulos `sale` y `account`
   instalados
 
 ---
 
-## Instalacion
+## Instalación
 
 ### Backend Rust
 
@@ -157,7 +173,7 @@ export ODOO_DATABASE_URL="postgres://odoo:postgres@localhost:5432/odoo_prod"
 cargo loco start
 ```
 
-El servidor arranca en `http://localhost:5150` con migraciones automaticas
+El servidor arranca en `http://localhost:5150` con migraciones automáticas
 (`auto_migrate: true`).
 
 ### Addons Odoo
@@ -179,12 +195,12 @@ ln -s /ruta/a/odoo_loco_shop/odoo_custom_addons/muk_web_* .
 
 ---
 
-## Configuracion
+## Configuración
 
 ### Token de Webhook
 
-El addon `odoo_rust_sync` genera automaticamente un token
-(`rust_api.webhook_token`) en los parametros de sistema de Odoo.
+El addon `odoo_rust_sync` genera automáticamente un token
+(`rust_api.webhook_token`) en los parámetros de sistema de Odoo.
 Se puede visualizar y modificar desde el backend Rust en:
 
 ```
@@ -205,7 +221,7 @@ curl -X POST http://localhost:5150/api/config/token \
 
 ### Variables de entorno
 
-| Variable | Default | Descripcion |
+| Variable | Default | Descripción |
 |----------|---------|-------------|
 | `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/odoo_shop_development` | Base de datos local |
 | `REDIS_URL` | `redis://127.0.0.1` | Servidor Redis |
@@ -215,19 +231,19 @@ curl -X POST http://localhost:5150/api/config/token \
 
 ## Uso
 
-### Sincronizacion de productos
+### Sincronización de productos
 
-Los productos se sincronizan automaticamente desde Odoo al backend Rust
+Los productos se sincronizan automáticamente desde Odoo al backend Rust
 cuando se crean o modifican en Odoo (webhook).
 
-Para sincronizacion masiva inicial:
+Para sincronización masiva inicial:
 
 ```bash
 cd rust_backend
 cargo loco task sync
 ```
 
-### Catalogo web
+### Catálogo web
 
 - **Inicio**: `http://localhost:5150/`
 - **Productos**: `http://localhost:5150/shop/home`
@@ -236,10 +252,10 @@ cargo loco task sync
 
 ### Flujo de compra
 
-1. El usuario navega el catalogo y agrega productos al carrito.
+1. El usuario navega el catálogo y agrega productos al carrito.
 2. En `/cart` revisa los items y hace clic en "Proceder al Pago".
 3. En `/checkout` completa sus datos de contacto y confirma el pedido.
-4. El backend Rust envia los datos a Odoo via HTTP.
+4. El backend Rust envía los datos a Odoo via HTTP.
 5. Odoo crea el partner, la orden de venta, la confirma, genera la
    factura y la valida.
 6. El usuario es redirigido a `/order/success` con la referencia de
@@ -252,7 +268,7 @@ cargo loco task sync
 
 ### Webhooks (Odoo -> Rust)
 
-| Metodo | Ruta | Descripcion |
+| Método | Ruta | Descripción |
 |--------|------|-------------|
 | POST | `/api/webhooks/odoo/update` | Producto individual |
 | POST | `/api/webhooks/odoo/bulk-update` | Productos en lote |
@@ -261,31 +277,54 @@ Requieren header `Authorization: Bearer <token>` (token de `configs.webhook_toke
 
 ### Carrito
 
-| Metodo | Ruta | Descripcion |
+| Método | Ruta | Descripción |
 |--------|------|-------------|
 | POST | `/api/carts/` | Agregar item (body: `{"product_id": 123}`) |
 
 ### Checkout
 
-| Metodo | Ruta | Descripcion |
+| Método | Ruta | Descripción |
 |--------|------|-------------|
 | POST | `/api/checkout` | Procesar pedido (body: `{"customer": {...}}`) |
 
-### Autenticacion
+### Autenticación
 
-| Metodo | Ruta | Descripcion |
+| Método | Ruta | Descripción |
 |--------|------|-------------|
 | POST | `/api/auth/register` | Registro de usuario |
-| POST | `/api/auth/login` | Inicio de sesion |
+| POST | `/api/auth/login` | Inicio de sesión |
 | POST | `/api/auth/magic-link` | Magic link |
 | GET | `/api/auth/current` | Usuario actual |
 
-### Configuracion
+### Configuración
 
-| Metodo | Ruta | Descripcion |
+| Método | Ruta | Descripción |
 |--------|------|-------------|
 | GET | `/api/config/token` | Obtener webhook token |
 | POST | `/api/config/token` | Actualizar webhook token |
+
+### Ejemplos
+
+```bash
+# Sincronizar producto desde Odoo
+curl -X POST http://localhost:5150/api/webhooks/odoo/update \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"id": 123, "name": "Producto", "list_price": 29.99, "default_code": "REF-001"}'
+
+# Agregar al carrito
+curl -X POST http://localhost:5150/api/carts/ -d '{"product_id": 123}'
+
+# Registrar usuario
+curl -X POST http://localhost:5150/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Usuario", "email": "user@example.com", "password": "secret"}'
+
+# Checkout
+curl -X POST http://localhost:5150/api/checkout \
+  -H "Content-Type: application/json" \
+  -d '{"customer": {"name": "Juan", "email": "juan@example.com", "phone": "555-0100", "street": "Calle 123", "city": "CIDMX"}, "cart_id": "<uuid>"}'
+```
 
 ---
 
@@ -307,6 +346,13 @@ cargo fmt --all -- --check
 Los tests requieren PostgreSQL y Redis corriendo.
 
 ---
+
+## Contribuir
+
+1. Asegúrate de que `cargo test --all-features --all` pase.
+2. Mantén el estilo: `cargo fmt --all` y `cargo clippy --all-features` sin warnings.
+3. Usa `i32` para IDs de Odoo, `Uuid` para IDs internos.
+4. PRs a la rama `main`. CI valida formato, linter y tests.
 
 ## Licencia
 
