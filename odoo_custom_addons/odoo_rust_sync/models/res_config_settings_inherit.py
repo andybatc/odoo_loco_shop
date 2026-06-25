@@ -1,4 +1,4 @@
-from odoo import models, fields, api
+from odoo import models, fields
 import secrets
 import requests
 import logging
@@ -23,16 +23,6 @@ class ResConfigSettings(models.TransientModel):
             self.env['ir.config_parameter'].sudo().set_param(
                 'rust_api.base_url', 'http://127.0.0.1:5150'
             )
-
-    @api.depends('rust_shop_admin_id')
-    def _compute_rust_shop_admin_id(self):
-        for record in self:
-            email = self.env['ir.config_parameter'].sudo().get_param('rust_api.shop_admin_email')
-            if email:
-                user = self.env['res.users'].sudo().search([('login', '=', email)], limit=1)
-                record.rust_shop_admin_id = user.id if user else False
-            else:
-                record.rust_shop_admin_id = False
 
     def get_values(self):
         res = super(ResConfigSettings, self).get_values()
@@ -65,7 +55,7 @@ class ResConfigSettings(models.TransientModel):
             _logger.warning("No se envió webhook admin: webhook_token no configurado")
             return
 
-        base_url = self._get_rust_base_url()
+        base_url = self.env['ir.config_parameter'].sudo().get_param('rust_api.base_url', default='http://127.0.0.1:5150').rstrip('/')
         url = f"{base_url}/api/webhooks/odoo/admin"
         headers = {
             "Authorization": f"Bearer {token}",
@@ -88,8 +78,4 @@ class ResConfigSettings(models.TransientModel):
 
         self.env.cr.postcommit.add(send_after_commit)
 
-    def _get_rust_base_url(self):
-        return self.env['ir.config_parameter'].sudo().get_param(
-            'rust_api.base_url',
-            default='http://127.0.0.1:5150'
-        ).rstrip('/')
+
