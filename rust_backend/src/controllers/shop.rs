@@ -1,9 +1,8 @@
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
-use crate::models::product_template_odoo::{self};
 use loco_rs::prelude::*;
-use sea_orm::{query::*, Database, ColumnTrait, QueryFilter};
+use sea_orm::{query::*, ColumnTrait, QueryFilter};
 use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use axum::http::HeaderMap;
@@ -15,22 +14,6 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use std::time::Duration;
 
-#[debug_handler]
-pub async fn list(State(ctx): State<AppContext>) -> Result<Response> {
-    let odoo_uri = ctx.config.settings.as_ref().and_then(|s| s["odoo_database"]["uri"].as_str()).unwrap_or("postgres://odoo:postgres@localhost:5432/odoo_prod");
-
-    let odoo_db = Database::connect(odoo_uri)
-        .await
-        .map_err(|_| Error::BadRequest("Error al conectar con el catálogo de productos".to_string()))?;
-
-    let products = product_template_odoo::Entity::find()
-        .filter(product_template_odoo::Column::IsPublished.eq(true))
-        .limit(10)
-        .all(&odoo_db)
-        .await?;
-
-    format::json(products)
-}
 #[derive(Deserialize)]
 pub struct CatalogParams {
     pub page: Option<u32>,
@@ -408,5 +391,4 @@ pub fn routes() -> Routes {
         .add("/api/search", get(search_api))
         .add("/product/{id}", get(get_product_page))
         .add("/api/product/{id}", get(get_product))
-        .add("/api/products", get(list))
 }
