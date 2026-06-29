@@ -42,6 +42,9 @@ axum-extra = "0.10.3"
 reqwest = { version = "0.12", features = ["json"] }
 utoipa = { version = "5.5", features = ["axum_extras", "uuid", "decimal"] }
 utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
+audit = "0.7.3"
+axum-prometheus = "0.9"
+redis = "0.31"
 
 [[bin]]
 name = "odoo_shop-cli"

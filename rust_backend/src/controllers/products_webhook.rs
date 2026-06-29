@@ -4,34 +4,46 @@
 use loco_rs::prelude::*;
 use sea_orm::ActiveValue::Set;
 use crate::workers::webhook::{WebhookWorker, WebhookWorkerArgs};
-use crate::controllers::token_auth::AuthToken;
+use crate::middleware::auth_extractor::AuthToken;
 use crate::models::_entities::users;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 use serde::Deserialize;
-use std::time::Duration;
+use loco_rs::config::CacheConfig;
 
 pub(crate) async fn check_rate_limit(ctx: &AppContext, key: &str, max: i64, window_secs: u64) -> Result<()> {
-    let cache_key = format!("rate_limit:{}", key);
+    let redis_uri = match &ctx.config.cache {
+        CacheConfig::Redis(cfg) => cfg.uri.clone(),
+        _ => "redis://127.0.0.1:6379".to_string(),
+    };
 
-    let count = ctx
-        .cache
-        .get_or_insert_with_expiry::<i64, _>(
-            &cache_key,
-            Duration::from_secs(window_secs),
-            async { Ok(0i64) },
-        )
-        .await?;
+    let client = redis::Client::open(redis_uri.as_str())
+        .map_err(Error::msg)?;
+    let mut conn = client
+        .get_multiplexed_tokio_connection()
+        .await
+        .map_err(Error::msg)?;
 
-    if count >= max {
-        return Err(Error::string("Límite de peticiones excedido"));
+    let cache_key = format!("rate_limit:{key}");
+    let count: i64 = redis::cmd("INCR")
+        .arg(&cache_key)
+        .query_async(&mut conn)
+        .await
+        .map_err(Error::msg)?;
+
+    if count == 1 {
+        let _: () = redis::cmd("EXPIRE")
+            .arg(&cache_key)
+            .arg(window_secs)
+            .query_async(&mut conn)
+            .await
+            .map_err(Error::msg)?;
     }
 
-    let _ = ctx
-        .cache
-        .insert_with_expiry(&cache_key, &(count + 1), Duration::from_secs(window_secs))
-        .await;
-
-    Ok(())
+    if count > max {
+        Err(Error::string("Límite de peticiones excedido"))
+    } else {
+        Ok(())
+    }
 }
 
 #[utoipa::path(

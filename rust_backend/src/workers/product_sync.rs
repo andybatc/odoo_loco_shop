@@ -1,8 +1,9 @@
 use serde::{Deserialize, Serialize};
 use loco_rs::prelude::*;
 use crate::models::product_template_odoo;
-use crate::models::_entities::products;
+use crate::models::_entities::{configs, products};
 use sea_orm::{Database, sea_query::OnConflict};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 pub struct Worker {
     pub ctx: AppContext,
@@ -23,15 +24,18 @@ impl BackgroundWorker<WorkerArgs> for Worker {
     }
 
     async fn perform(&self, _args: WorkerArgs) -> Result<()> {
-        println!("🚀 Iniciando Sincronización: Odoo 18 -> Base Local");
+        tracing::info!("Iniciando sincronización: Odoo -> Local");
 
-        let odoo_uri = "postgres://odoo:postgres@localhost:5432/odoo_prod";
-        let odoo_db = Database::connect(odoo_uri)
+        let odoo_uri = configs::Entity::find()
+            .filter(configs::Column::Key.eq("odoo_db_uri"))
+            .one(&self.ctx.db)
+            .await?
+            .and_then(|c| c.value)
+            .unwrap_or_else(|| "postgres://odoo:postgres@localhost:5432/odoo_prod".to_string());
+
+        let odoo_db = Database::connect(&odoo_uri)
             .await
-            .map_err(|e| {
-                println!("❌ Fallo conectando a Odoo: {}", e);
-                Error::BadRequest(e.to_string())
-            })?;
+            .map_err(|e| Error::BadRequest(format!("Error conectando a Odoo: {e}")))?;
 
         let category_map: std::collections::HashMap<i32, String> = {
             use sea_orm::Statement;
@@ -57,7 +61,7 @@ impl BackgroundWorker<WorkerArgs> for Worker {
             .await
             .map_err(|e| Error::BadRequest(e.to_string()))?;
 
-        println!("📦 Se encontraron {} productos en Odoo.", odoo_products.len());
+        tracing::info!("Se encontraron {} productos en Odoo.", odoo_products.len());
 
         for item in odoo_products {
             let name_string = item.name.get("es_ES")
@@ -65,7 +69,7 @@ impl BackgroundWorker<WorkerArgs> for Worker {
                 .and_then(|v| v.as_str())
                 .unwrap_or("Sin nombre");
 
-            println!("🔄 Procesando: {} (ID Odoo: {})", name_string, item.id);
+            tracing::info!("Procesando: {} (ID Odoo: {})", name_string, item.id);
 
             let category_name = category_map.get(&item.categ_id).cloned();
 
@@ -93,12 +97,12 @@ impl BackgroundWorker<WorkerArgs> for Worker {
                 .exec(&self.ctx.db)
                 .await
             {
-                Ok(res) => println!("   ✅ Guardado exitoso (ID Local: {:?})", res.last_insert_id),
-                Err(err) => println!("   ❌ ERROR guardando {}: {}", name_string, err),
+                Ok(res) => tracing::info!("Guardado exitoso (ID Local: {:?})", res.last_insert_id),
+                Err(err) => tracing::error!("Error guardando {}: {}", name_string, err),
             }
         }
 
-        println!("✅ Proceso terminado.");
+        tracing::info!("Sincronización completada.");
         Ok(())
     }
 }

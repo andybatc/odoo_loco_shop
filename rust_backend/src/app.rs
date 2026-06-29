@@ -15,17 +15,14 @@ use std::path::Path;
 use loco_rs::controller::views::{engines::TeraView, ViewEngine};
 use axum::{Extension, Router};
 use axum::http::HeaderValue;
-use axum::routing::get_service;
-use loco_rs::prelude::*;
 use tower_http::services::ServeDir;
 use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
-use loco_rs::controller::Routes;
+use loco_rs::prelude::*;
 use utoipa::OpenApi;
 use std::env;
 
-#[allow(unused_imports)]
-use crate::{controllers, models::_entities::users, middleware, tasks, workers::downloader::DownloadWorker};
+use crate::{controllers, models::_entities::users, middleware, tasks};
 
 pub struct App;
 #[async_trait]
@@ -61,7 +58,7 @@ impl Hooks for App {
             .add_route(controllers::carts::routes())
             .add_route(controllers::checkout::routes())
             .add_route(controllers::homepage::routes())
-            .add_route(controllers::token_auth::routes())
+
             .add_route(controllers::views::routes())
             .add_route(controllers::config::routes())
             .add_route(controllers::products_webhook::routes())
@@ -69,7 +66,19 @@ impl Hooks for App {
             .add_route(controllers::auth::routes())
             .add_route(controllers::admin::routes())
     }
-    async fn after_routes(router: Router, _ctx: &AppContext) -> Result<Router> {
+    async fn after_routes(router: Router, ctx: &AppContext) -> Result<Router> {
+        let router = router
+            .route("/_health", axum::routing::get(|| async { "OK" }))
+            .route("/_ready", axum::routing::get(|| async { "OK" }));
+
+        let router = if ctx.environment != Environment::Test {
+            let (prometheus_layer, metric_handle) = axum_prometheus::PrometheusMetricLayer::pair();
+            router
+                .route("/metrics", axum::routing::get(|| async move { metric_handle.render() }))
+                .layer(prometheus_layer)
+        } else {
+            router
+        };
         // Middleware para reemplazar páginas de error 401/403/500
         async fn error_page_middleware(
             req: axum::http::Request<axum::body::Body>,
@@ -146,7 +155,6 @@ impl Hooks for App {
     async fn connect_workers(ctx: &AppContext, queue: &Queue) -> Result<()> {
         queue.register(crate::workers::webhook::WebhookWorker::build(ctx)).await?;
         queue.register(crate::workers::product_sync::Worker::build(ctx)).await?;
-        queue.register(DownloadWorker::build(ctx)).await?;
         Ok(())
     }
 
@@ -154,6 +162,7 @@ impl Hooks for App {
     fn register_tasks(tasks: &mut Tasks) {
         tasks.register(tasks::sync::Sync);
         tasks.register(tasks::promote_user::PromoteUser);
+        tasks.register(tasks::cleanup_carts::CleanupCarts);
         // tasks-inject (do not remove)
     }
     async fn truncate(ctx: &AppContext) -> Result<()> {
