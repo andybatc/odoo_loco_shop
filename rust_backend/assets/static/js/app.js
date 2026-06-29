@@ -15,6 +15,20 @@ document.addEventListener('DOMContentLoaded', () => {
         methods: {
             incrementar() {
                 this.contador++;
+            },
+            updateCartBadge() {
+                const el = document.getElementById('cart-count');
+                if (el) {
+                    el.textContent = this.cartCount;
+                    const badge = el.closest('#cart-badge');
+                    if (badge) {
+                        if (this.cartCount > 0) {
+                            badge.classList.remove('scale-0');
+                        } else {
+                            badge.classList.add('scale-0');
+                        }
+                    }
+                }
             }
         },
         mounted() {
@@ -30,9 +44,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (event && event.detail && typeof event.detail.count !== 'undefined') {
                     this.cartCount = event.detail.count;
                 } else {
-                    this.cartCount++; // Suma 1 limpiamente sobre el 0 inicial
+                    this.cartCount++;
                 }
-                console.log("🛒 Carrito actualizado en layout global. Nuevo total:", this.cartCount);
+                this.updateCartBadge();
+                console.log("🛒 Carrito actualizado. Nuevo total:", this.cartCount);
+            });
+
+            document.getElementById('search-toggle')?.addEventListener('click', () => {
+                const bar = document.getElementById('search-bar');
+                if (bar) {
+                    bar.classList.toggle('hidden');
+                    bar.classList.toggle('block');
+                    const input = bar.querySelector('input');
+                    if (!bar.classList.contains('hidden')) input?.focus();
+                }
             });
         }
     }).mount('#vue-test');

@@ -24,7 +24,7 @@ document.addEventListener('DOMContentLoaded', () => {
         },
         methods: {
             handleImageError(event) {
-                event.target.src = '/static/images/No image avaible.jpeg';
+                event.target.src = '/static/images/No image available.jpeg';
             }
         },
         mounted() {
