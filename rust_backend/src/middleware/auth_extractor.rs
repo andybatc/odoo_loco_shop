@@ -7,6 +7,8 @@ use loco_rs::auth::jwt::JWT;
 use loco_rs::prelude::*;
 
 use crate::models::_entities::users;
+use crate::models::_entities::configs as configs_entity;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
 
 pub struct CurrentUser {
     pub user: users::Model,
@@ -82,5 +84,37 @@ where
         Ok(AdminUser {
             user: current.user,
         })
+    }
+}
+
+pub struct AuthToken;
+
+impl<S> FromRequestParts<S> for AuthToken
+where
+    AppContext: FromRef<S>,
+    S: Send + Sync,
+{
+    type Rejection = loco_rs::Error;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        let ctx = AppContext::from_ref(state);
+
+        let auth_header = parts.headers.get("Authorization")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|h| h.strip_prefix("Bearer "))
+            .ok_or_else(|| loco_rs::Error::Unauthorized("Token faltante".to_string()))?;
+
+        let config = configs_entity::Entity::find()
+            .filter(configs_entity::Column::Key.eq("webhook_token"))
+            .one(&ctx.db)
+            .await
+            .map_err(|e| loco_rs::Error::wrap(e))?
+            .ok_or_else(|| loco_rs::Error::NotFound)?;
+
+        if config.value.as_deref() != Some(auth_header) {
+            return Err(loco_rs::Error::Unauthorized("Token inválido".to_string()));
+        }
+
+        Ok(AuthToken)
     }
 }
