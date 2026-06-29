@@ -36,16 +36,16 @@
     {% if products %}
     <div class="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6">
         {% for product in products %}
-        <div class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow">
+        <a href="/shop/product/{{ product.id }}" class="bg-white rounded-xl shadow-md overflow-hidden border border-gray-100 hover:shadow-xl transition-shadow block">
             <img
                 {% if product.image_filename %}
                 src="/storage/products/{{ product.image_filename }}"
                 {% else %}
-                src="/static/images/No image avaible.jpeg"
+                src="/static/images/No image available.jpeg"
                 {% endif %}
                 class="h-48 w-full object-contain hover:bg-slate-800"
                 alt="{{ product.name | default(value='Producto') }}"
-                onerror="this.src='/static/images/No image avaible.jpeg'"
+                onerror="this.src='/static/images/No image available.jpeg'"
             >
             <div class="p-4">
                 <h2 class="text-lg font-bold text-gray-800">{{ product.name | default(value="Producto sin nombre") }}</h2>
@@ -62,7 +62,7 @@
                     </span>
                 </div>
             </div>
-        </div>
+        </a>
         {% endfor %}
     </div>
 
