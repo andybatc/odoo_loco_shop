@@ -10,6 +10,11 @@
     <script src="/static/js/htmx.min.js"></script>
     <script src="/static/js/vue.global.js"></script>
     <script src="/static/js/app.js?v=2"></script>
+    <style>
+        .htmx-spinner { display: none; }
+        .htmx-request .htmx-spinner { display: inline-block; }
+        .htmx-request.htmx-spinner { display: inline-block; }
+    </style>
     {% block head_extra %}{% endblock head_extra %}
 </head>
 <body class="bg-gray-50 flex flex-col min-h-screen" style="background-color: aliceblue;">
@@ -62,7 +67,13 @@
             </a>
         </div>
 
-        <div class="flex-1 max-w-md mx-4 hidden md:block">
+        <button id="search-toggle" class="md:hidden p-2 text-gray-300 hover:text-white transition" aria-label="Buscar">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+            </svg>
+        </button>
+
+        <div id="search-bar" class="flex-1 max-w-md mx-4 hidden md:block">
             <form action="/shop/search" method="get" class="relative">
                 <input
                     type="text"
@@ -86,7 +97,7 @@
 
                 <span id="cart-badge"
                       class="absolute -top-1.5 -right-1.5 bg-blue-600 text-white text-[10px] font-bold rounded-full w-4 h-4 flex items-center justify-center scale-0 transition-transform duration-200">
-                    0
+                    <span id="cart-count">0</span>
                 </span>
                 <span class="absolute right-0 top-full mt-2 w-20 p-1 bg-gray-800 text-white text-[10px] text-center rounded opacity-0 invisible group-hover:opacity-100 group-hover:visible transition z-50 shadow-xl">
                     Ver Carrito
