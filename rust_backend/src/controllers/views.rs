@@ -2,7 +2,8 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 use crate::controllers::auth as auth_controller;
-use crate::models::_entities::{users, cart_items, products, configs};
+use crate::models::_entities::{users, configs};
+use crate::models::cart_helpers;
 use crate::models::config_cache;
 use crate::models::users::LoginParams;
 use crate::views::auth::LoginResponse;
@@ -19,17 +20,6 @@ use regex::Regex;
 #[derive(Serialize)]
 pub struct BaseContext {
     pub current_user: Option<users::Model>,
-    // Aquí puedes añadir más cosas que sean globales (ej. notificaciones)
-}
-
-#[derive(serde::Serialize)]
-pub struct CartItemRender {
-    pub id: i32,
-    pub name: String,
-    pub price: f64,
-    pub quantity: i32,
-    pub subtotal: f64,
-    pub image_filename: Option<String>,
 }
 
 pub async fn get_current_user(ctx: &AppContext, cookie_header: Option<String>) -> Option<users::Model> {
@@ -209,65 +199,28 @@ pub async fn cart_display(
     ViewEngine(v): ViewEngine<TeraView>,
     headers: HeaderMap,
 ) -> Result<Response> {
-    let cookie_name = "rsv_cart_session";
-    let mut render_items = Vec::new();
-    let mut grand_total = 0.0;
     let cookie_header = headers
         .get("cookie")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
-    // 1. Intentar recuperar el carrito mediante la cookie de sesión
-    if let Some(cookie) = jar.get(cookie_name) {
+    let (items, total) = if let Some(cookie) = jar.get("rsv_cart_session") {
         if let Ok(cart_uuid) = Uuid::parse_str(cookie.value()) {
-
-            // 2. Obtener todos los ítems vinculados a este carrito
-            let items = cart_items::Entity::find()
-                .filter(cart_items::Column::CartId.eq(cart_uuid))
-                .all(&ctx.db)
-                .await?;
-
-            if !items.is_empty() {
-                let mut product_ids = Vec::new();
-                let mut item_quantities = std::collections::HashMap::new();
-
-                for item in &items {
-                    product_ids.push(item.product_id);
-                    item_quantities.insert(item.product_id, item.quantity);
-                }
-
-                // 4. Buscar los productos en la base de datos de una sola consulta
-                let db_products = products::Entity::find()
-                    .filter(products::Column::Id.is_in(product_ids))
-                    .all(&ctx.db)
-                    .await?;
-
-                // 5. Armar el contexto listo para la vista
-                for prod in db_products {
-                    let qty = *item_quantities.get(&prod.id).unwrap_or(&1);
-                    let price_f64 = prod.price.map(|p| p.to_string().parse::<f64>().unwrap_or(0.0)).unwrap_or(0.0);
-                    let subtotal = price_f64 * (qty as f64);
-                    grand_total += subtotal;
-
-                    render_items.push(CartItemRender {
-                        id: prod.id,
-                        name: prod.name.unwrap_or_else(|| "Producto sin nombre".to_string()),
-                        price: price_f64,
-                        quantity: qty,
-                        subtotal,
-                        image_filename: prod.image_filename,
-                    });
-                }
-            }
+            let cart = cart_helpers::load_cart(&ctx, cart_uuid).await?;
+            (cart.items, cart.total)
+        } else {
+            (vec![], 0.0)
         }
-    }
+    } else {
+        (vec![], 0.0)
+    };
 
     format::render().view(
         &v,
         "shop/cart.html",
         &serde_json::json!({
-            "items": render_items,
-            "total": grand_total,
+            "items": items,
+            "total": total,
             "current_user": user,
         }),
     )

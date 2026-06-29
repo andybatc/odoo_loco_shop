@@ -56,10 +56,6 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
         }
         // =========================================================
 
-        // 🔥 DEFINIMOS LAS CLAVES DE CACHÉ
-        let cache_key_individual = format!("product:odoo:{}", args.odoo_id);
-        let cache_key_catalogo = "products:all";
-
         // Buscar en la base de datos local de la tienda por 'odoo_id'
         let local_product = products::Entity::find()
             .filter(products::Column::OdooId.eq(Some(args.odoo_id)))
@@ -104,11 +100,9 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                         .map_err(|e| loco_rs::Error::msg(e))?;
                     tracing::info!("💾 ¡Cambios guardados en la Base de Datos!");
 
-                    let _ = self.ctx.cache.remove(&cache_key_individual).await;
-                    let _ = self.ctx.cache.remove(cache_key_catalogo).await;
                     bump_search_version(&self.ctx).await;
                     bump_catalog_version(&self.ctx).await;
-                    tracing::info!("♻️ Caché de Redis limpia para producto {} y catálogo global.", args.odoo_id);
+                    tracing::info!("♻️ Caché de Redis invalidada para producto {} y catálogo global.", args.odoo_id);
                 } else {
                     tracing::warn!("⚠️ No se detectaron cambios reales. Se omitió el UPDATE.");
                 }
@@ -132,7 +126,6 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                     .await
                     .map_err(|e| loco_rs::Error::msg(e))?;
 
-                let _ = self.ctx.cache.remove(cache_key_catalogo).await;
                 bump_search_version(&self.ctx).await;
                 bump_catalog_version(&self.ctx).await;
                 tracing::info!("♻️ Catálogo global invalidado en Redis por nuevo producto.");
