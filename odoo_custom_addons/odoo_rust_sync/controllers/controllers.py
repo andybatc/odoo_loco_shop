@@ -23,6 +23,7 @@ class OdooOrderController(http.Controller):
             return self._json_response({'error': 'Invalid JSON'}, 400)
 
         customer = data.get('customer', {})
+        payment_method_id = data.get('payment_method_id')
         items = data.get('items', [])
 
         if not items:
@@ -67,10 +68,15 @@ class OdooOrderController(http.Controller):
             return self._json_response({'error': 'No valid products found in Odoo'}, 400)
 
         try:
-            sale_order = request.env['sale.order'].sudo().create({
+            sale_vals = {
                 'partner_id': partner.id,
                 'order_line': order_lines,
-            })
+            }
+            if payment_method_id:
+                provider = request.env['payment.provider'].sudo().browse(payment_method_id)
+                if provider.exists():
+                    sale_vals['note'] = "Payment Method: %s (%s)" % (provider.name, provider.code)
+            sale_order = request.env['sale.order'].sudo().create(sale_vals)
 
             sale_order.action_confirm()
 

@@ -18,13 +18,14 @@ Long description of module's purpose
     'version': '0.1',
 
     # any module necessary for this one to work correctly
-    'depends': ['base','product','sale','account'],
+    'depends': ['base','product','sale','account','payment'],
 
     # always loaded
     'data': [
         'data/ir_config_parameter_data.xml',
         # 'security/ir.model.access.csv',
         'views/product_webhook_actions.xml',
+        'views/shop_sync_views.xml',
         #'views/templates.xml',
     ],
     # only loaded in demonstration mode

@@ -4,6 +4,7 @@
 
 use crate::models::_entities::{cart_items, carts, configs, order_items, products, users};
 use crate::models::_entities::orders as orders_entity;
+use crate::models::_entities::payment_methods as payment_methods_entity;
 use crate::models::cart_helpers;
 use axum::extract::Query;
 use axum::http::HeaderMap;
@@ -12,7 +13,9 @@ use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use loco_rs::prelude::*;
 use sea_orm::ActiveValue::Set;
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 use utoipa::ToSchema;
 
 #[derive(Deserialize, ToSchema)]
@@ -28,6 +31,7 @@ pub struct CustomerInfo {
 #[derive(Deserialize, ToSchema)]
 pub struct CheckoutRequest {
     pub customer: CustomerInfo,
+    pub payment_method_id: Option<i32>,
 }
 
 #[derive(Serialize, ToSchema)]
@@ -80,6 +84,24 @@ pub async fn checkout_page(
         (vec![], 0.0)
     };
 
+    let cached_methods: Option<Vec<payment_methods_entity::Model>> =
+        ctx.cache.get("payment_methods:all").await.ok().flatten();
+    let payment_methods = if let Some(methods) = cached_methods {
+        methods
+    } else {
+        let methods = payment_methods_entity::Entity::find()
+            .filter(payment_methods_entity::Column::IsActive.eq(true))
+            .order_by_asc(payment_methods_entity::Column::Sequence)
+            .all(&ctx.db)
+            .await
+            .unwrap_or_default();
+        let _ = ctx
+            .cache
+            .insert_with_expiry("payment_methods:all", &methods, Duration::from_secs(300))
+            .await;
+        methods
+    };
+
     format::render().view(
         &v,
         "shop/checkout.html",
@@ -87,6 +109,7 @@ pub async fn checkout_page(
             "items": items,
             "total": total,
             "current_user": user,
+            "payment_methods": payment_methods,
         }),
     )
 }
@@ -262,7 +285,7 @@ pub(crate) async fn submit_checkout(
 
     let odoo_url = format!("{}/api/orders/create", odoo_domain);
 
-    let payload = serde_json::json!({
+    let mut payload = serde_json::json!({
         "customer": {
             "name": params.customer.name,
             "email": params.customer.email,
@@ -273,6 +296,10 @@ pub(crate) async fn submit_checkout(
         },
         "items": odoo_items,
     });
+
+    if let Some(pm_id) = params.payment_method_id {
+        payload["payment_method_id"] = serde_json::json!(pm_id);
+    }
 
     let client = reqwest::Client::new();
     let response = client

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <record id="action_payment_provider_sync_rust" model="ir.actions.server">
+            <field name="name">Sync to Shop</field>
+            <field name="model_id" ref="payment.model_payment_provider"/>
+            <field name="binding_model_id" ref="payment.model_payment_provider"/>
+            <field name="binding_view_types">list,form</field>
+            <field name="binding_type">action</field>
+            <field name="state">code</field>
+            <field name="code">
+                if records:
+                    action = records.action_sync_payment_methods()
+            </field>
+        </record>
+    </data>
+</odoo>

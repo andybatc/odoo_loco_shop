@@ -5,6 +5,8 @@ const app = Vue.createApp({
         return {
             items: JSON.parse(el.dataset.items || '[]'),
             totalGeneral: parseFloat(el.dataset.total || '0'),
+            paymentMethods: JSON.parse(el.dataset.paymentMethods || '[]'),
+            selectedPaymentId: null,
             customer: {
                 name: '',
                 email: '',
@@ -23,10 +25,14 @@ const app = Vue.createApp({
             this.errorMessage = '';
 
             try {
+                const body = { customer: this.customer };
+                if (this.selectedPaymentId) {
+                    body.payment_method_id = this.selectedPaymentId;
+                }
                 const response = await fetch('/api/checkout', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ customer: this.customer }),
+                    body: JSON.stringify(body),
                 });
 
                 const data = await response.json();

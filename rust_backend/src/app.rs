@@ -62,6 +62,7 @@ impl Hooks for App {
             .add_route(controllers::views::routes())
             .add_route(controllers::config::routes())
             .add_route(controllers::products_webhook::routes())
+            .add_route(controllers::payment_webhooks::routes())
             .add_route(controllers::shop::routes())
             .add_route(controllers::auth::routes())
             .add_route(controllers::admin::routes())
