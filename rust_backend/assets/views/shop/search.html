@@ -67,7 +67,7 @@
     </div>
 
     {% if total_pages > 1 %}
-    <div class="flex justify-center gap-2 mt-10">
+    <div class="flex flex-wrap justify-center items-center gap-2 mt-10">
         {% if page > 1 %}
         <a href="/shop/search?q={{ query }}&page={{ page - 1 }}"
            class="px-4 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 transition">
@@ -75,11 +75,15 @@
         </a>
         {% endif %}
 
-        {% for p in range(end=total_pages + 1, start=1) %}
-        <a href="/shop/search?q={{ query }}&page={{ p }}"
-           class="px-4 py-2 rounded-lg transition {% if p == page %}bg-slate-900 text-white{% else %}bg-white border border-gray-300 hover:bg-gray-100{% endif %}">
-            {{ p }}
+        {% for item in pagination %}
+        {% if item.Page is defined %}
+        <a href="/shop/search?q={{ query }}&page={{ item.Page }}"
+           class="px-4 py-2 rounded-lg transition {% if item.Page == page %}bg-slate-900 text-white{% else %}bg-white border border-gray-300 hover:bg-gray-100{% endif %}">
+            {{ item.Page }}
         </a>
+        {% else %}
+        <span class="px-3 py-2 text-gray-400 select-none">&hellip;</span>
+        {% endif %}
         {% endfor %}
 
         {% if page < total_pages %}
@@ -88,6 +92,16 @@
             Siguiente &raquo;
         </a>
         {% endif %}
+
+        <form action="/shop/search" method="get" class="flex items-center gap-1 ml-2">
+            <input type="hidden" name="q" value="{{ query }}">
+            <input type="number" name="page" min="1" max="{{ total_pages }}" placeholder="Nº"
+                   class="w-16 px-2 py-2 border border-gray-300 rounded-lg text-sm text-center">
+            <button type="submit"
+                    class="px-3 py-2 bg-gray-100 border border-gray-300 rounded-lg text-sm hover:bg-gray-200 transition">
+                Ir
+            </button>
+        </form>
     </div>
     {% endif %}
 

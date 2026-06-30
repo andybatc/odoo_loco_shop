@@ -42,6 +42,43 @@ fn catalog_cache_key(ver: i64, page: u32, category: &str) -> String {
 
 const PAGE_SIZE: u32 = 12;
 
+#[derive(Serialize)]
+#[serde(untagged)]
+pub enum PageItem {
+    Page(u64),
+    Ellipsis,
+}
+
+fn build_pagination(current: u64, total: u64) -> Vec<PageItem> {
+    if total <= 7 {
+        return (1..=total).map(PageItem::Page).collect();
+    }
+
+    let mut pages = Vec::new();
+    if current <= 3 {
+        for p in 1..=5 {
+            pages.push(PageItem::Page(p));
+        }
+        pages.push(PageItem::Ellipsis);
+        pages.push(PageItem::Page(total));
+    } else if current >= total - 2 {
+        pages.push(PageItem::Page(1));
+        pages.push(PageItem::Ellipsis);
+        for p in total - 4..=total {
+            pages.push(PageItem::Page(p));
+        }
+    } else {
+        pages.push(PageItem::Page(1));
+        pages.push(PageItem::Ellipsis);
+        for p in current - 1..=current + 1 {
+            pages.push(PageItem::Page(p));
+        }
+        pages.push(PageItem::Ellipsis);
+        pages.push(PageItem::Page(total));
+    }
+    pages
+}
+
 pub async fn index(
     ViewEngine(v): ViewEngine<TeraView>,
     State(ctx): State<AppContext>,
@@ -123,6 +160,8 @@ pub async fn index(
         }
     };
 
+    let pagination = build_pagination(page.into(), total_pages);
+
     format::render().view(
         &v,
         "shop/home.html",
@@ -134,6 +173,7 @@ pub async fn index(
             "current_user": user,
             "category": category,
             "categories": categories,
+            "pagination": pagination,
         }),
     )
 }
@@ -167,6 +207,8 @@ pub async fn search_page(
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
+    let pagination = build_pagination(page.into(), total_pages);
+
     format::render().view(
         &v,
         "shop/search.html",
@@ -177,6 +219,7 @@ pub async fn search_page(
             "total_pages": total_pages,
             "total": cached.total,
             "current_user": user,
+            "pagination": pagination,
         }),
     )
 }
