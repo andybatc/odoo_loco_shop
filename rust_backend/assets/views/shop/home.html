@@ -74,7 +74,7 @@
         </a>
         {% endif %}
 
-        {% for p in range(end=total_pages, start=1) %}
+        {% for p in range(end=total_pages + 1, start=1) %}
         <a href="/shop/home?page={{ p }}{% if category %}&category={{ category }}{% endif %}"
            class="px-4 py-2 rounded-lg transition {% if p == page %}bg-slate-900 text-white{% else %}bg-white border border-gray-300 hover:bg-gray-100{% endif %}">
             {{ p }}
