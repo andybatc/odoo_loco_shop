@@ -67,9 +67,7 @@ impl Hooks for App {
             .add_route(controllers::admin::routes())
     }
     async fn after_routes(router: Router, ctx: &AppContext) -> Result<Router> {
-        let router = router
-            .route("/_health", axum::routing::get(|| async { "OK" }))
-            .route("/_ready", axum::routing::get(|| async { "OK" }));
+        let router = router;
 
         let router = if ctx.environment != Environment::Test {
             let (prometheus_layer, metric_handle) = axum_prometheus::PrometheusMetricLayer::pair();
