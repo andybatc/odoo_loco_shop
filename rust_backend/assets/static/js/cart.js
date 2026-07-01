@@ -11,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     items = JSON.parse(scriptEl.textContent);
                 } catch (e) {
+                    console.error('Error parsing cart data:', e);
                     items = [];
                 }
                 if (!Array.isArray(items)) items = [];
