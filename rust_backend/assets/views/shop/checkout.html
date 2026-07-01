@@ -3,9 +3,10 @@
 {% block title %}Confirmar Pedido{% endblock title %}
 
 {% block content %}
-<script id="checkout-data" type="application/json">{{ {"items": items, "total": total, "payment_methods": payment_methods} | json_encode | safe }}</script>
+<script id="checkout-items" type="application/json">{{ items | json_encode | safe }}</script>
+<script id="checkout-payment-methods" type="application/json">{{ payment_methods | json_encode | safe }}</script>
 
-<div id="checkout-app" class="container mx-auto py-10 px-4">
+<div id="checkout-app" class="container mx-auto py-10 px-4" data-total="{{ total }}">
 
     <div class="flex items-center justify-between mb-8 border-b border-gray-200 pb-4">
         <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-2">

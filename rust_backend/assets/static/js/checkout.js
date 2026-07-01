@@ -1,24 +1,17 @@
-function parseCheckoutData() {
-    let data = { items: [], total: 0, payment_methods: [] };
-    const scriptEl = document.getElementById('checkout-data');
-    if (scriptEl) {
-        try {
-            data = JSON.parse(scriptEl.textContent);
-        } catch (e) {
-            console.error('Error parsing checkout data:', e);
-        }
-    }
-    return data;
+function parseJsonScript(id) {
+    const el = document.getElementById(id);
+    if (!el) return null;
+    try { return JSON.parse(el.textContent); } catch (e) { return null; }
 }
 
 const app = Vue.createApp({
     delimiters: ['[[', ']]'],
     data() {
-        const raw = parseCheckoutData();
+        const el = document.getElementById('checkout-app');
         return {
-            items: raw.items || [],
-            totalGeneral: raw.total || 0,
-            paymentMethods: raw.payment_methods || [],
+            items: parseJsonScript('checkout-items') || [],
+            totalGeneral: parseFloat(el?.getAttribute('data-total') || '0'),
+            paymentMethods: parseJsonScript('checkout-payment-methods') || [],
             selectedPaymentId: null,
             customer: {
                 name: '',
