@@ -15,14 +15,24 @@ desacoplado en Rust (Loco.rs) con Redis para caché y colas.
 ## Quick Start
 
 ```bash
-git clone git@github.com:andybatc/odoo_loco_shop.git
-cd odoo_loco_shop/rust_backend
+# Opción 1: Docker (recomendado)
+docker compose up
+# Servidor en http://localhost:5150
+
+# Opción 2: Manual (requiere Rust + PostgreSQL + Redis)
+cd rust_backend
 export DATABASE_URL="postgres://postgres:postgres@localhost:5432/odoo_shop_development"
 export REDIS_URL="redis://127.0.0.1"
 cargo loco start
 ```
 
-Servidor en `http://localhost:5150`. Requiere PostgreSQL y Redis.
+Servidor en `http://localhost:5150`.
+
+Para levantar también Odoo (con módulos pre-instalados):
+```bash
+docker compose --profile full up
+```
+Odoo disponible en `http://localhost:8069`. Luego configurar el webhook token y `rust_api.base_url` en Ajustes → Técnico → Parámetros del sistema.
 
 ---
 

@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: odoo_shop_development
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "6379:6379"
+
+  rust_backend:
+    build: ./rust_backend
+    ports:
+      - "5150:5150"
+    environment:
+      DATABASE_URL: postgres://postgres:postgres@postgres:5432/odoo_shop_development
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - product_images:/app/storage/products
+
+  odoo:
+    build: ./odoo_custom_addons
+    profiles: ["full"]
+    ports:
+      - "8069:8069"
+    environment:
+      HOST: postgres
+      USER: postgres
+      PASSWORD: postgres
+      DB_NAME: odoo_prod
+    command: odoo -d odoo_prod -i muk_web_theme,odoo_rust_sync --without-demo=all
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - odoo_data:/var/lib/odoo
+      - ./odoo_custom_addons:/mnt/extra-addons
+
+volumes:
+  postgres_data:
+  product_images:
+  odoo_data:
