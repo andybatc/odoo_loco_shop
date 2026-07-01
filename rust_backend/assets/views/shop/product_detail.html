@@ -45,11 +45,11 @@
                 </div>
                 <div class="mt-8 space-y-3">
                     <button
-                        hx-post="/api/carts"
+                        hx-post="/api/carts/"
                         hx-headers='{"Content-Type": "application/json"}'
                         hx-vals='{"product_id": {{ product.id }} }'
-                        hx-target="#cart-badge"
-                        hx-swap="outerHTML"
+                        hx-swap="none"
+                        hx-on::after-request="document.dispatchEvent(new CustomEvent('update-cart-count')); showToast('Producto agregado al carrito')"
                         hx-indicator="#spinner-cart"
                         hx-disabled-elt="this"
                         class="w-full bg-slate-900 text-white font-semibold py-3 rounded-xl hover:bg-slate-800 transition-colors tracking-wide shadow-md text-center"

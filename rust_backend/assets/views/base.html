@@ -88,7 +88,7 @@
         </div>
 
         <div class="flex items-center gap-4">
-            <a href="/ui/auth/cart" class="group relative text-gray-300 hover:text-white transition mr-2">
+            <a href="/cart" class="group relative text-gray-300 hover:text-white transition mr-2">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                           d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 0a2 2 0 110 4 2 2 0 010-4z">
@@ -172,6 +172,18 @@
         <p class="text-sm font-mono">&copy; 2026 Andy Batista - Odoo & Rust Developer</p>
     </div>
 </footer>
+
+<div id="toast" class="fixed bottom-4 right-4 bg-green-600 text-white px-4 py-2.5 rounded-lg shadow-lg z-[100] transition-all duration-300 opacity-0 translate-y-2 text-sm font-medium pointer-events-none"></div>
+
+<script>
+function showToast(msg) {
+    const t = document.getElementById('toast');
+    if (!t) return;
+    t.textContent = msg;
+    t.classList.remove('opacity-0', 'translate-y-2');
+    setTimeout(() => t.classList.add('opacity-0', 'translate-y-2'), 2500);
+}
+</script>
 
 </body>
 </html>
