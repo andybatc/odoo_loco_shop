@@ -38,6 +38,56 @@ Conjunto de addons de MuK para personalizar la interfaz backend de Odoo:
 | `muk_web_chatter` | Mejoras en el chatter |
 | `muk_web_colors` | Personalización de colores por compañía |
 
+## Despliegue en Docker
+
+### Cómo se montan los addons
+
+Cuando levantás Odoo con `docker compose --profile full up`, pasan estas cosas:
+
+**1. Build de la imagen custom**
+
+`odoo_custom_addons/Dockerfile`:
+```dockerfile
+FROM odoo:18
+USER root
+RUN pip3 install --no-cache-dir requests
+USER odoo
+```
+
+La imagen oficial `odoo:18` no incluye la librería `requests`. Pero `odoo_rust_sync` la importa a nivel de módulo en 4 archivos. Sin esto, Odoo crashea al arrancar.
+
+**2. Montaje de addons como volumen**
+
+```yaml
+volumes:
+  - ./odoo_custom_addons:/mnt/extra-addons
+```
+
+La imagen oficial de Odoo configura automáticamente el path `/mnt/extra-addons` en su `--addons-path`. Cualquier addon colocado ahí es detectable por Odoo sin configuración adicional.
+
+**3. Auto-inicialización de la base de datos**
+
+```yaml
+command: odoo -d odoo_prod -i muk_web_theme,odoo_rust_sync --without-demo=all
+```
+
+- `-d odoo_prod`: nombre de la base de datos
+- `-i muk_web_theme,odoo_rust_sync`: módulos a instalar (el resto se instalan por dependencia transitiva)
+- `--without-demo=all`: evita cargar datos demo
+
+En el primer arranque, Odoo detecta que la BD no existe, la crea e instala los módulos. En arranques siguientes, la BD existe y el `-i` se ignora.
+
+**4. Conexión a PostgreSQL externa**
+
+```yaml
+environment:
+  HOST: postgres        # servicio Docker
+  USER: postgres
+  PASSWORD: postgres
+```
+
+Odoo se conecta al servicio `postgres` del compose, no a una BD local.
+
 ## Configuración
 
 ### Webhook Token

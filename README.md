@@ -187,7 +187,23 @@ cargo loco start
 El servidor arranca en `http://localhost:5150` con migraciones automáticas
 (`auto_migrate: true`).
 
-### Addons Odoo
+### Odoo + Docker (recomendado)
+
+Al usar `docker compose --profile full up`, el servicio Odoo se configura automáticamente:
+
+1. **Build**: `odoo_custom_addons/Dockerfile` extiende la imagen oficial `odoo:18` e instala la librería Python `requests` (necesaria para los webhooks salientes de `odoo_rust_sync`).
+2. **Montaje de addons**: el directorio `./odoo_custom_addons/` se monta como volumen en `/mnt/extra-addons/` dentro del contenedor. La imagen Odoo incluye ese path en su `--addons-path` por defecto.
+3. **Auto-inicialización**: en el primer arranque, el comando `-d odoo_prod -i muk_web_theme,odoo_rust_sync` crea la base de datos e instala todos los módulos automáticamente.
+4. **Red interna**: Odoo alcanza al backend Rust via `http://rust_backend:5150` (nombre del servicio Docker).
+
+```yaml
+# Extracto de docker-compose.yml
+volumes:
+  - ./odoo_custom_addons:/mnt/extra-addons  # addons montados aquí
+command: odoo -d odoo_prod -i odoo_rust_sync,muk_web_theme --without-demo=all
+```
+
+### Addons Odoo (instalación manual, sin Docker)
 
 ```bash
 # En el directorio de addons personalizados de Odoo
@@ -203,6 +219,8 @@ ln -s /ruta/a/odoo_loco_shop/odoo_custom_addons/muk_web_* .
            -d odoo_prod \
            -i odoo_rust_sync,muk_web_theme,muk_web_dialog,muk_web_chatter,muk_web_colors,muk_web_appsbar
 ```
+
+> **Nota**: en la instalación manual también necesitás instalar `requests` en el entorno Python de Odoo: `pip install requests`.
 
 ---
 

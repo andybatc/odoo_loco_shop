@@ -30,6 +30,15 @@ Servicios:
 
 La primera vez que arranca con `--profile full`, Odoo crea automáticamente la base de datos e instala los módulos (`muk_web_theme`, `odoo_rust_sync`, etc.).
 
+### Qué pasa internamente cuando arranca Odoo en Docker
+
+1. Se construye la imagen desde `odoo_custom_addons/Dockerfile` (instala `requests` en Python)
+2. Los addons en `./odoo_custom_addons/` se montan como volumen en `/mnt/extra-addons/`
+3. El comando `odoo -d odoo_prod -i muk_web_theme,odoo_rust_sync --without-demo=all` se ejecuta
+4. Odoo detecta que la BD no existe → la crea → instala módulos → inicia el servidor
+
+Ver [Odoo Integration → Despliegue en Docker](./Odoo-Integration#despliegue-en-docker) para más detalle.
+
 ## Manual
 
 ### Backend Rust
