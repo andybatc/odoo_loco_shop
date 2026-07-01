@@ -37,14 +37,10 @@
                             {% endif %}
                         </span>
                     </div>
-                    {% if product.stock is not null %}
-                    <p class="text-sm mt-2 {% if product.stock > 0 %}text-green-600{% else %}text-red-500{% endif %}">
-                        {% if product.stock > 0 %}
-                        {{ product.stock }} en stock
-                        {% else %}
-                        Agotado
-                        {% endif %}
-                    </p>
+                    {% if product.stock == 0 %}
+                    <p class="text-sm mt-2 text-red-500">Agotado</p>
+                    {% elif product.stock %}
+                    <p class="text-sm mt-2 text-green-600">{{ product.stock }} en stock</p>
                     {% endif %}
                 </div>
                 <div class="mt-8 space-y-3">
