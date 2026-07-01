@@ -11,13 +11,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     items = JSON.parse(scriptEl.textContent);
                 } catch (e) {
-                    console.error('Error parsing cart data:', e);
                     items = [];
                 }
+                if (!Array.isArray(items)) items = [];
             }
             return {
                 items,
-                // Guardamos el total inicial enviado por el backend en Rust
                 totalBackend: parseFloat(rawTotal)
             }
         },

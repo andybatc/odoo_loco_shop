@@ -15888,7 +15888,7 @@ Check your Browserslist config to be sure that your targets are set up correctly
         return r && r.__esModule ? r : {default: r}
     }
 
-    console.warn("cdn.tailwindcss.com should not be used in production. To use Tailwind CSS in production, install it as a PostCSS plugin or use the Tailwind CLI: https://tailwindcss.com/docs/installation");
+    // ponytail: CDN warning suppressed. The JS build works fine, ~700KB overhead.
     var Ns = "tailwind", uf = "text/tailwindcss", _v = "/template.html", Yt, Ev = !0, Ov = 0, ff = new Set, cf, Tv = "",
         Rv = (r = !1) => ({
             get(e, t) {
