@@ -304,14 +304,9 @@ async fn handle_config_update(
 pub fn routes() -> Routes {
     Routes::new()
         .add("/cart", get(cart_display))
-        // Grupo para Autenticación Web
-        // URL Resultante: /api/ui/auth/web-login
-        .prefix("ui/auth")
-        .add("/web-login", get(login_display))
-        .add("/web-login", post(login_web))
-        .add("/web-register", get(register_display))
-        // Grupo para Configuración
-        // URL Resultante: /api/ui/auth/config
-        .add("/config", get(config_page))
-        .add("/config", post(handle_config_update))
+        .add("/ui/auth/web-login", get(login_display))
+        .add("/ui/auth/web-login", post(login_web))
+        .add("/ui/auth/web-register", get(register_display))
+        .add("/ui/auth/config", get(config_page))
+        .add("/ui/auth/config", post(handle_config_update))
 }
