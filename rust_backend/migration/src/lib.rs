@@ -17,6 +17,7 @@ mod m20260622_000003_add_category_to_products;
 mod m20260622_000004_add_role_to_users;
 mod m20260622_000005_add_performance_indexes;
 mod m20260630_000001_payment_methods;
+mod m20260701_000001_fix_payment_methods_tz;
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -38,6 +39,7 @@ impl MigratorTrait for Migrator {
             Box::new(m20260622_000004_add_role_to_users::Migration),
             Box::new(m20260622_000005_add_performance_indexes::Migration),
             Box::new(m20260630_000001_payment_methods::Migration),
+            Box::new(m20260701_000001_fix_payment_methods_tz::Migration),
             // inject-above (do not remove this comment)
         ]
     }
