@@ -31,7 +31,7 @@ pub async fn add_security_headers(
     );
     headers.insert(
         "Content-Security-Policy",
-        HeaderValue::from_static("default-src 'self'; script-src 'self' https://unpkg.com; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none';"),
+        HeaderValue::from_static("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://unpkg.com; script-src-attr 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://unpkg.com; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none';"),
     );
 
     response
