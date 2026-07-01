@@ -3,9 +3,9 @@
 {% block title %}Tu Carrito{% endblock title %}
 
 {% block content %}
-<div id="cart-app" class="container mx-auto py-10 px-4"
-     data-items='{{ items | json_encode | safe }}'
-     data-total='{{ total }}'>
+<script id="cart-data" type="application/json">{{ items | json_encode | safe }}</script>
+
+<div id="cart-app" class="container mx-auto py-10 px-4" data-total='{{ total }}'>
 
     <div class="flex items-center justify-between mb-8 border-b border-gray-200 pb-4">
         <h1 class="text-3xl font-bold text-gray-800 flex items-center gap-2">

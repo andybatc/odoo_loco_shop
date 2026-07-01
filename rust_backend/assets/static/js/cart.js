@@ -4,12 +4,19 @@ document.addEventListener('DOMContentLoaded', () => {
     createApp({
         delimiters: ['[[', ']]'],
         data() {
-            const el = document.getElementById('cart-app');
-            const rawItems = el ? el.getAttribute('data-items') : '[]';
-            const rawTotal = el ? el.getAttribute('data-total') : '0';
-
+            const rawTotal = document.getElementById('cart-app')?.getAttribute('data-total') || '0';
+            let items = [];
+            const scriptEl = document.getElementById('cart-data');
+            if (scriptEl) {
+                try {
+                    items = JSON.parse(scriptEl.textContent);
+                } catch (e) {
+                    console.error('Error parsing cart data:', e);
+                    items = [];
+                }
+            }
             return {
-                items: JSON.parse(rawItems),
+                items,
                 // Guardamos el total inicial enviado por el backend en Rust
                 totalBackend: parseFloat(rawTotal)
             }
