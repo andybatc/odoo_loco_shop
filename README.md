@@ -16,6 +16,7 @@ desacoplado en Rust (Loco.rs) con Redis para caché y colas.
 
 ```bash
 # Opción 1: Docker (recomendado)
+cp .env.example .env
 docker compose up
 # Servidor en http://localhost:5150
 
@@ -26,13 +27,13 @@ export REDIS_URL="redis://127.0.0.1"
 cargo loco start
 ```
 
-Servidor en `http://localhost:5150`.
+Servidor en `http://localhost:5150`. Documentación interactiva de la API en [`http://localhost:5150/swagger-ui`](http://localhost:5150/swagger-ui).
 
 Para levantar también Odoo (con módulos pre-instalados):
 ```bash
 docker compose --profile full up
 ```
-Odoo disponible en `http://localhost:8069`. Luego configurar el webhook token y `rust_api.base_url` en Ajustes → Técnico → Parámetros del sistema.
+Odoo disponible en `http://localhost:8069`.
 
 ---
 
@@ -207,20 +208,34 @@ ln -s /ruta/a/odoo_loco_shop/odoo_custom_addons/muk_web_* .
 
 ## Configuración
 
-### Token de Webhook
+### Variables de entorno
 
-El addon `odoo_rust_sync` genera automáticamente un token
-(`rust_api.webhook_token`) en los parámetros de sistema de Odoo.
-Se puede visualizar y modificar desde el backend Rust en:
+| Variable | Default | Descripción |
+|----------|---------|-------------|
+| `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/odoo_shop_development` | Base de datos local |
+| `REDIS_URL` | `redis://127.0.0.1` | Servidor Redis |
+| `ODOO_DATABASE_URL` | `postgres://odoo:postgres@localhost:5432/odoo_prod` | Base de datos de Odoo (sync masivo) |
 
-```
-http://localhost:5150/ui/auth/token
-```
+Ver [`.env.example`](.env.example).
 
-O via API:
+### Webhook Odoo → Rust
+
+Para que Odoo se comunique con el backend Rust necesita dos parámetros:
+
+| Parámetro | Valor ejemplo | Dónde se configura |
+|-----------|---------------|-------------------|
+| `rust_api.base_url` | `http://rust_backend:5150` | Odoo → Ajustes → Técnico → Parámetros del sistema |
+| `rust_api.webhook_token` | (generado automáticamente) | Odoo → Ajustes → Técnico → Parámetros del sistema, o en `http://localhost:5150/ui/auth/token` |
+
+Pasos:
+
+1. **Con Docker**: el `base_url` es `http://rust_backend:5150` (nombre del servicio en la red interna).
+   **Sin Docker**: usar `http://host.docker.internal:5150` (o `localhost:5150` si Odoo corre nativo).
+2. El token se genera automáticamente al abrir Ajustes → Módulos Rust Sync en Odoo.
+   Alternativamente, se puede crear manualmente o sincronizar desde la UI del backend Rust en `http://localhost:5150/ui/auth/token`.
 
 ```bash
-# Obtener token actual
+# Ver token actual
 curl http://localhost:5150/api/config/token
 
 # Actualizar token
@@ -229,13 +244,12 @@ curl -X POST http://localhost:5150/api/config/token \
   -d '{"token": "nuevo_token"}'
 ```
 
-### Variables de entorno
+### Verificar que la integración funciona
 
-| Variable | Default | Descripción |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgres://postgres:postgres@localhost:5432/odoo_shop_development` | Base de datos local |
-| `REDIS_URL` | `redis://127.0.0.1` | Servidor Redis |
-| `ODOO_DATABASE_URL` | `postgres://odoo:postgres@localhost:5432/odoo_prod` | Base de datos de Odoo (sync masivo) |
+1. En Odoo, crear o editar un producto →  guardar.
+2. El addon `odoo_rust_sync` dispara un webhook HTTP POST a `{base_url}/api/webhooks/odoo/update` con los datos del producto.
+3. Ver en logs de Rust: `tracing::info!()` muestra "Webhook received".
+4. Confirmar navegando a `http://localhost:5150/shop/home` — el producto aparece.
 
 ---
 
@@ -366,4 +380,4 @@ Los tests requieren PostgreSQL y Redis corriendo.
 
 ## Licencia
 
-LGPL-3.0. Ver [LICENSE](./LICENSE).
+[LGPL-3.0](./LICENSE).
