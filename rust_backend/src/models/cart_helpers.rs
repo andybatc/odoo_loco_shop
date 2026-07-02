@@ -7,6 +7,7 @@ use uuid::Uuid;
 #[derive(Serialize)]
 pub struct CartItemRender {
     pub id: i32,
+    pub item_id: Uuid,
     pub name: String,
     pub price: f64,
     pub quantity: i32,
@@ -32,8 +33,10 @@ pub async fn load_cart(ctx: &AppContext, cart_uuid: Uuid) -> Result<CartWithTota
 
     let product_ids: Vec<i32> = items.iter().map(|i| i.product_id).collect();
     let mut item_quantities = std::collections::HashMap::new();
+    let mut item_ids = std::collections::HashMap::new();
     for item in &items {
         item_quantities.insert(item.product_id, item.quantity);
+        item_ids.insert(item.product_id, item.id);
     }
 
     let db_products = products::Entity::find()
@@ -52,6 +55,7 @@ pub async fn load_cart(ctx: &AppContext, cart_uuid: Uuid) -> Result<CartWithTota
 
         render_items.push(CartItemRender {
             id: prod.id,
+            item_id: *item_ids.get(&prod.id).unwrap_or(&Uuid::default()),
             name: prod.name.unwrap_or_else(|| "Producto sin nombre".to_string()),
             price: price_f64,
             quantity: qty,

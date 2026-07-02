@@ -4,7 +4,13 @@
 
 {% block content %}
 <div class="container mx-auto py-8 px-4">
-    <a href="/shop/home" class="text-blue-600 hover:underline text-sm mb-6 inline-block">&larr; Volver al catálogo</a>
+<nav class="flex items-center gap-1 text-xs text-gray-400 mb-1" aria-label="Breadcrumb">
+    <a href="/" class="hover:text-blue-600 transition">Inicio</a>
+    <span class="text-gray-300">›</span>
+    <a href="/shop/home" class="hover:text-blue-600 transition">Catálogo</a>
+    <span class="text-gray-300">›</span>
+    <span class="text-gray-600 font-medium truncate max-w-[160px]">{{ product.name }}</span>
+</nav>
 
     <div class="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8 p-8">
@@ -43,7 +49,21 @@
                     <p class="text-sm mt-2 text-green-600">{{ product.stock }} en stock</p>
                     {% endif %}
                 </div>
-                <div class="mt-8 space-y-3">
+                <div class="mt-8 space-y-4">
+                    <div class="flex items-center gap-3">
+                        <label class="text-sm font-medium text-gray-700">Cantidad:</label>
+                        <div class="flex items-center border border-gray-300 rounded-lg overflow-hidden">
+                            <button type="button"
+                                    onclick="const qty = document.getElementById('product-qty'); qty.value = Math.max(1, parseInt(qty.value) - 1);"
+                                    class="px-3 py-2 text-gray-600 hover:bg-gray-100 transition text-lg font-medium cursor-pointer">−</button>
+                            <input id="product-qty" type="number" value="1" min="1" max="99"
+                                   class="w-14 text-center py-2 border-x border-gray-300 text-sm font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+                                   onchange="if(this.value < 1) this.value = 1; if(this.value > 99) this.value = 99;">
+                            <button type="button"
+                                    onclick="const qty = document.getElementById('product-qty'); qty.value = Math.min(99, parseInt(qty.value) + 1);"
+                                    class="px-3 py-2 text-gray-600 hover:bg-gray-100 transition text-lg font-medium cursor-pointer">+</button>
+                        </div>
+                    </div>
                     <button
                         hx-post="/api/carts"
                         hx-vals='{"product_id": {{ product.id }} }'

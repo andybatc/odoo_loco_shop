@@ -7,8 +7,7 @@ use loco_rs::auth::jwt::JWT;
 use loco_rs::prelude::*;
 
 use crate::models::_entities::users;
-use crate::models::_entities::configs as configs_entity;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+
 
 pub struct CurrentUser {
     pub user: users::Model,
@@ -104,14 +103,12 @@ where
             .and_then(|h| h.strip_prefix("Bearer "))
             .ok_or_else(|| loco_rs::Error::Unauthorized("Token faltante".to_string()))?;
 
-        let config = configs_entity::Entity::find()
-            .filter(configs_entity::Column::Key.eq("webhook_token"))
-            .one(&ctx.db)
+        let token = crate::models::config_cache::get_cached_config(&ctx, "webhook_token")
             .await
             .map_err(|e| loco_rs::Error::wrap(e))?
             .ok_or_else(|| loco_rs::Error::NotFound)?;
 
-        if config.value.as_deref() != Some(auth_header) {
+        if token.as_str() != auth_header {
             return Err(loco_rs::Error::Unauthorized("Token inválido".to_string()));
         }
 

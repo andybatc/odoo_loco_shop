@@ -3,7 +3,7 @@ use loco_rs::prelude::*;
 use crate::models::product_template_odoo;
 use crate::models::_entities::{configs, products};
 use sea_orm::{Database, sea_query::OnConflict};
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, Statement};
 
 pub struct Worker {
     pub ctx: AppContext,
@@ -38,7 +38,6 @@ impl BackgroundWorker<WorkerArgs> for Worker {
             .map_err(|e| Error::BadRequest(format!("Error conectando a Odoo: {e}")))?;
 
         let category_map: std::collections::HashMap<i32, String> = {
-            use sea_orm::Statement;
             let rows = odoo_db
                 .query_all(Statement::from_string(
                     odoo_db.get_database_backend(),
@@ -73,12 +72,25 @@ impl BackgroundWorker<WorkerArgs> for Worker {
 
             let category_name = category_map.get(&item.categ_id).cloned();
 
+            // Obtener stock real desde product_product.qty_available
+            let stock_value: f32 = match odoo_db
+                .query_one(Statement::from_sql_and_values(
+                    odoo_db.get_database_backend(),
+                    "SELECT COALESCE(SUM(qty_available), 0) FROM product_product WHERE product_tmpl_id = $1",
+                    vec![item.id.into()],
+                ))
+                .await
+            {
+                Ok(Some(row)) => row.try_get_by_index::<f32>(0).unwrap_or(0.0),
+                _ => 0.0,
+            };
+
             let active_product = products::ActiveModel {
                 odoo_id: Set(Some(item.id)),
                 name: Set(Some(name_string.to_string())),
                 sku: Set(item.default_code.clone()),
                 price: Set(Some(item.list_price.unwrap_or_default())),
-                stock: Set(Some(0.0)),
+                stock: Set(Some(stock_value)),
                 category: Set(category_name),
                 ..Default::default()
             };
@@ -90,6 +102,7 @@ impl BackgroundWorker<WorkerArgs> for Worker {
                             products::Column::Name,
                             products::Column::Sku,
                             products::Column::Price,
+                            products::Column::Stock,
                             products::Column::Category,
                         ])
                         .to_owned()

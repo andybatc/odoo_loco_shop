@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Odoo Rust Shop{% endblock title %}</title>
+    <meta name="description" content="{% block meta_description %}Tienda online con productos de calidad, envíos rápidos y los mejores precios.{% endblock meta_description %}">
+    <meta property="og:title" content="{% block og_title %}OdooShop - Tienda Online{% endblock og_title %}">
+    <meta property="og:description" content="{% block og_description %}Descubre nuestra selección de productos con los mejores precios y envío rápido.{% endblock og_description %}">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="{{ request_uri | default(value='/') }}">
+    <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='24' font-weight='bold' fill='%233B82F6'%3ER%3C/text%3E%3C/svg%3E">
     <link rel="stylesheet" href="/static/css/main.css">
 
     <link href="/static/css/tailwind.css" rel="stylesheet">

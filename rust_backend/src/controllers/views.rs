@@ -2,7 +2,7 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 use crate::controllers::auth as auth_controller;
-use crate::models::_entities::{users, configs};
+use crate::models::_entities::{users, configs, carts};
 use crate::models::cart_helpers;
 use crate::models::config_cache;
 use crate::models::users::LoginParams;
@@ -16,6 +16,7 @@ use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use regex::Regex;
+use uuid::Uuid;
 
 #[derive(Serialize)]
 pub struct BaseContext {
@@ -193,9 +194,13 @@ pub async fn config_page(
     Ok((jar, response))
 }
 
+fn read_cookie_val(headers: &HeaderMap, name: &str) -> Option<String> {
+    let cookie_str = headers.get("cookie")?.to_str().ok()?;
+    cookie_str.split(';').find(|s| s.trim().starts_with(name))?.split('=').nth(1).map(|s| s.trim().to_string())
+}
+
 pub async fn cart_display(
     State(ctx): State<AppContext>,
-    jar: CookieJar,
     ViewEngine(v): ViewEngine<TeraView>,
     headers: HeaderMap,
 ) -> Result<Response> {
@@ -204,14 +209,33 @@ pub async fn cart_display(
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
-    let (items, total) = if let Some(cookie) = jar.get("rsv_cart_session") {
-        if let Ok(cart_uuid) = Uuid::parse_str(cookie.value()) {
-            let cart = cart_helpers::load_cart(&ctx, cart_uuid).await?;
-            (cart.items, cart.total)
-        } else {
-            (vec![], 0.0)
+    let (items, total) = if let Some(ref u) = user {
+        let cart = carts::Entity::find()
+            .filter(carts::Column::UserId.eq(u.pid))
+            .one(&ctx.db)
+            .await?;
+        match cart {
+            Some(c) => {
+                let loaded = cart_helpers::load_cart(&ctx, c.id).await?;
+                tracing::info!("🛒 Cart display logged-in: {} items, total={}", loaded.items.len(), loaded.total);
+                (loaded.items, loaded.total)
+            }
+            None => (vec![], 0.0),
+        }
+    } else if let Some(ref val) = read_cookie_val(&headers, "rsv_cart_session") {
+        match Uuid::parse_str(val) {
+            Ok(cart_uuid) => {
+                let loaded = cart_helpers::load_cart(&ctx, cart_uuid).await?;
+                tracing::info!("🛒 Cart display guest: {} items, total={}", loaded.items.len(), loaded.total);
+                (loaded.items, loaded.total)
+            }
+            Err(_) => {
+                tracing::warn!("🛒 Invalid cart UUID in cookie: {}", val);
+                (vec![], 0.0)
+            }
         }
     } else {
+        tracing::info!("🛒 Cart display: no user, no cookie");
         (vec![], 0.0)
     };
 

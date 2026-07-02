@@ -2,7 +2,8 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 
-use crate::models::_entities::{cart_items, carts, configs, order_items, products, users};
+use crate::controllers::views::get_current_user;
+use crate::models::_entities::{cart_items, carts, configs, order_items, products};
 use crate::models::_entities::orders as orders_entity;
 use crate::models::_entities::payment_methods as payment_methods_entity;
 use crate::models::cart_helpers;
@@ -41,25 +42,6 @@ pub struct CheckoutResponse {
     pub invoice_name: Option<String>,
     pub total: Option<f64>,
     pub error: Option<String>,
-}
-
-pub async fn get_current_user(
-    ctx: &AppContext,
-    cookie_header: Option<String>,
-) -> Option<users::Model> {
-    let cookie_str = cookie_header?;
-    let token = cookie_str
-        .split(';')
-        .find(|s| s.trim().starts_with("token="))?
-        .split('=')
-        .nth(1)?;
-    let jwt_config = ctx.config.get_jwt_config().ok()?;
-    let auth = loco_rs::auth::jwt::JWT::new(&jwt_config.secret)
-        .validate(token)
-        .ok()?;
-    users::Model::find_by_pid(&ctx.db, &auth.claims.pid)
-        .await
-        .ok()
 }
 
 pub async fn checkout_page(

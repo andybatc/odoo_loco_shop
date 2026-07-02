@@ -3,7 +3,8 @@
 #![allow(clippy::unused_async)]
 use axum::extract::{State, Json, Form};
 use axum::extract::Path;
-use axum_extra::extract::cookie::{Cookie, CookieJar};
+
+use loco_rs::auth::jwt::JWT;
 use loco_rs::prelude::*;
 use sea_orm::{ActiveValue::Set, ColumnTrait, EntityTrait, QueryFilter};
 use serde::{Deserialize, Serialize};
@@ -19,12 +20,12 @@ pub struct AddItemParams {
 
 pub async fn add_to_cart(
     State(ctx): State<AppContext>,
-    jar: CookieJar,
     headers: axum::http::HeaderMap,
     Form(params): Form<AddItemParams>,
-) -> Result<(CookieJar, Json<serde_json::Value>), Error> {
+) -> Result<Response, Error> {
 
-    // 0. Validar que el producto exista y tenga stock
+    tracing::info!("🛒 add_to_cart: product_id={}, cookie_header={:?}", params.product_id, headers.get("cookie").map(|h| h.to_str().ok()));
+
     let product = products::Entity::find_by_id(params.product_id)
         .one(&ctx.db)
         .await?
@@ -36,33 +37,54 @@ pub async fn add_to_cart(
         }
     }
 
-    let current_user_id: Option<Uuid> = None;
-
-    if let Some(_auth_header) = headers.get("Authorization") {
-        // TODO: Decodificar JWT si se requiere en el futuro
-    }
+    let current_user_id: Option<Uuid> = headers
+        .get("cookie")
+        .and_then(|h| h.to_str().ok())
+        .and_then(|cookie_str| {
+            let token = cookie_str
+                .split(';')
+                .find(|s| s.trim().starts_with("token="))?
+                .split('=')
+                .nth(1)?;
+            let jwt_config = ctx.config.get_jwt_config().ok()?;
+            let auth = JWT::new(&jwt_config.secret)
+                .validate(token)
+                .ok()?;
+            let pid = Uuid::parse_str(&auth.claims.pid).ok()?;
+            Some(pid)
+        });
 
     let mut current_cart: Option<carts::Model> = None;
-    let cookie_name = "rsv_cart_session";
 
-    // 1. Buscar el carrito existente
+    let read_cookie = |name: &str| -> Option<String> {
+        let cookie_str = headers.get("cookie")?.to_str().ok()?;
+        cookie_str.split(';').find(|s| s.trim().starts_with(name))?.split('=').nth(1).map(|s| s.trim().to_string())
+    };
+
     if let Some(uid) = current_user_id {
         current_cart = carts::Entity::find()
             .filter(carts::Column::UserId.eq(uid))
             .one(&ctx.db)
             .await?;
-    } else if let Some(cookie) = jar.get(cookie_name) {
-        if let Ok(parsed_uuid) = Uuid::parse_str(cookie.value()) {
+        tracing::info!("🛒 add_to_cart: user logged in uid={}, found_cart={:?}", uid, current_cart.as_ref().map(|c| c.id));
+    } else if let Some(cookie_val) = read_cookie("rsv_cart_session") {
+        if let Ok(parsed_uuid) = Uuid::parse_str(&cookie_val) {
             current_cart = carts::Entity::find_by_id(parsed_uuid).one(&ctx.db).await?;
+            tracing::info!("🛒 add_to_cart: existing guest cookie={}, found_cart={:?}", parsed_uuid, current_cart.is_some());
+        } else {
+            tracing::warn!("🛒 add_to_cart: invalid cookie val={}", cookie_val);
         }
+    } else {
+        tracing::info!("🛒 add_to_cart: no user cookie, no rsv_cart_session cookie");
     }
 
-    // 2. Crear el carrito si no existe alguno activo
     let cart = match current_cart {
         Some(c) => c,
         None => {
+            let cart_id = Uuid::new_v4();
+            tracing::info!("🛒 add_to_cart: creating new cart id={}, uid={:?}", cart_id, current_user_id);
             let new_cart = carts::ActiveModel {
-                id: Set(Uuid::new_v4()),
+                id: Set(cart_id),
                 user_id: Set(current_user_id),
                 ..Default::default()
             };
@@ -70,7 +92,14 @@ pub async fn add_to_cart(
         }
     };
 
-    // 3. Buscar si el ítem ya existe en el carrito
+    if let Some(uid) = current_user_id {
+        if cart.user_id.is_none() {
+            let mut active_cart: carts::ActiveModel = cart.clone().into();
+            active_cart.user_id = Set(Some(uid));
+            active_cart.update(&ctx.db).await?;
+        }
+    }
+
     let existing_item = cart_items::Entity::find()
         .filter(cart_items::Column::CartId.eq(cart.id))
         .filter(cart_items::Column::ProductId.eq(params.product_id))
@@ -80,7 +109,6 @@ pub async fn add_to_cart(
     let current_qty = existing_item.as_ref().map(|i| i.quantity).unwrap_or(0);
     let new_qty = current_qty + 1;
 
-    // 4. Validar stock con la nueva cantidad total
     if let Some(stock) = product.stock {
         if new_qty as f32 > stock {
             return Err(Error::BadRequest(
@@ -90,14 +118,16 @@ pub async fn add_to_cart(
     }
 
     if let Some(item) = existing_item {
-        // Si ya existe, incrementamos la cantidad
+        tracing::info!("🛒 add_to_cart: updating qty item={:?} from {} to {}", item.id, item.quantity, new_qty);
         let mut active_item: cart_items::ActiveModel = item.into();
         active_item.quantity = Set(new_qty);
         active_item.update(&ctx.db).await?;
     } else {
-        // Si es nuevo, lo insertamos con cantidad inicial de 1
+        let item_id = Uuid::new_v4();
+        tracing::info!("🛒 add_to_cart: inserting item id={}, cart={}, product={}, qty={}",
+            item_id, cart.id, params.product_id, new_qty);
         let new_item = cart_items::ActiveModel {
-            id: Set(Uuid::new_v4()),
+            id: Set(item_id),
             cart_id: Set(cart.id),
             product_id: Set(params.product_id),
             quantity: Set(new_qty),
@@ -106,38 +136,73 @@ pub async fn add_to_cart(
         new_item.insert(&ctx.db).await?;
     }
 
-    // 5. Gestión de la cookie para usuarios invitados
-    let mut response_jar = jar;
-    if current_user_id.is_none() {
-        let cookie = Cookie::build((cookie_name, cart.id.to_string()))
-            .path("/")
-            .http_only(true)
-            .same_site(axum_extra::extract::cookie::SameSite::Lax)
-            .build();
-        response_jar = response_jar.add(cookie);
-    }
+    tracing::info!("🛒 add_to_cart: done, setting cookie={}", cart.id);
+    let body = serde_json::json!({
+        "status": "success",
+        "message": "Producto agregado al carrito",
+        "cart_id": cart.id
+    });
+    let bytes = serde_json::to_vec(&body).map_err(|e| Error::wrap(e))?;
 
-    Ok((
-        response_jar,
-        Json(serde_json::json!({
-            "status": "success",
-            "message": "Producto agregado al carrito",
-            "cart_id": cart.id
-        })),
-    ))
+    let mut response_builder = axum::response::Response::builder()
+        .header("content-type", "application/json");
+    if current_user_id.is_none() {
+        response_builder = response_builder.header(
+            "Set-Cookie",
+            format!("rsv_cart_session={}; Path=/; HttpOnly; SameSite=Lax", cart.id),
+        );
+    }
+    response_builder
+        .body(axum::body::Body::from(bytes))
+        .map_err(|e| Error::wrap(e))
 }
 
-async fn find_cart_from_cookie(jar: &CookieJar, ctx: &AppContext) -> Result<Option<carts::Model>> {
-    let cookie_name = "rsv_cart_session";
-    if let Some(cookie) = jar.get(cookie_name) {
-        if let Ok(parsed_uuid) = Uuid::parse_str(cookie.value()) {
-            return carts::Entity::find_by_id(parsed_uuid)
-                .one(&ctx.db)
-                .await
-                .map_err(|_| Error::string("Error al buscar carrito"));
-        }
+fn read_cart_cookie(headers: &axum::http::HeaderMap) -> Option<Uuid> {
+    let cookie_header = headers.get("cookie")?;
+    let cookie_str = cookie_header.to_str().ok()?;
+    let found = cookie_str.split(';').find(|s| s.trim().starts_with("rsv_cart_session="));
+    tracing::info!("🛒 read_cart_cookie: raw_cookie={:?}, found_rsv={:?}", cookie_str, found);
+    let val = found?.split('=').nth(1)?;
+    let parsed = Uuid::parse_str(val.trim()).ok();
+    tracing::info!("🛒 read_cart_cookie: val={:?}, parsed={:?}", val.trim(), parsed);
+    parsed
+}
+
+async fn find_cart_from_cookie(headers: &axum::http::HeaderMap, ctx: &AppContext) -> Result<Option<carts::Model>> {
+    if let Some(uuid) = read_cart_cookie(headers) {
+        return carts::Entity::find_by_id(uuid)
+            .one(&ctx.db)
+            .await
+            .map_err(|_| Error::string("Error al buscar carrito"));
     }
     Ok(None)
+}
+
+async fn find_cart(headers: &axum::http::HeaderMap, ctx: &AppContext) -> Result<Option<carts::Model>> {
+    if let Some(uid) = get_user_id(headers, ctx) {
+        tracing::info!("🛒 find_cart: logged-in user={}", uid);
+        let cart = carts::Entity::find()
+            .filter(carts::Column::UserId.eq(uid))
+            .one(&ctx.db)
+            .await
+            .map_err(|_| Error::string("Error al buscar carrito"))?;
+        if cart.is_some() {
+            return Ok(cart);
+        }
+    }
+    find_cart_from_cookie(headers, ctx).await
+}
+
+fn get_user_id(headers: &axum::http::HeaderMap, ctx: &AppContext) -> Option<Uuid> {
+    let cookie_str = headers.get("cookie")?.to_str().ok()?;
+    let token = cookie_str
+        .split(';')
+        .find(|s| s.trim().starts_with("token="))?
+        .split('=')
+        .nth(1)?;
+    let jwt_config = ctx.config.get_jwt_config().ok()?;
+    let auth = JWT::new(&jwt_config.secret).validate(token).ok()?;
+    Uuid::parse_str(&auth.claims.pid).ok()
 }
 
 #[derive(Serialize, ToSchema)]
@@ -162,9 +227,10 @@ pub struct CartItemWithProduct {
 )]
 pub async fn get_cart_items(
     State(ctx): State<AppContext>,
-    jar: CookieJar,
+    headers: axum::http::HeaderMap,
 ) -> Result<Json<Vec<CartItemWithProduct>>> {
-    let cart = find_cart_from_cookie(&jar, &ctx)
+    tracing::info!("🛒 get_cart_items: cookie_header={:?}", headers.get("cookie").map(|h| h.to_str().ok()));
+    let cart = find_cart(&headers, &ctx)
         .await?
         .ok_or_else(|| Error::NotFound)?;
 
@@ -234,7 +300,7 @@ pub struct UpdateQuantityParams {
 )]
 pub async fn update_cart_item_quantity(
     State(ctx): State<AppContext>,
-    jar: CookieJar,
+    headers: axum::http::HeaderMap,
     Path(item_id): Path<Uuid>,
     Json(params): Json<UpdateQuantityParams>,
 ) -> Result<Json<serde_json::Value>> {
@@ -242,7 +308,7 @@ pub async fn update_cart_item_quantity(
         return Err(Error::BadRequest("quantity must be at least 1".to_string()));
     }
 
-    let cart = find_cart_from_cookie(&jar, &ctx)
+    let cart = find_cart(&headers, &ctx)
         .await?
         .ok_or_else(|| Error::NotFound)?;
 
@@ -253,7 +319,6 @@ pub async fn update_cart_item_quantity(
         .await?
         .ok_or_else(|| Error::NotFound)?;
 
-    // Validar stock antes de actualizar
     let product = products::Entity::find_by_id(item.product_id)
         .one(&ctx.db)
         .await?
@@ -288,10 +353,10 @@ pub async fn update_cart_item_quantity(
 )]
 pub async fn remove_cart_item(
     State(ctx): State<AppContext>,
-    jar: CookieJar,
+    headers: axum::http::HeaderMap,
     Path(item_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>> {
-    let cart = find_cart_from_cookie(&jar, &ctx)
+    let cart = find_cart(&headers, &ctx)
         .await?
         .ok_or_else(|| Error::NotFound)?;
 

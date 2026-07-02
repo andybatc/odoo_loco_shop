@@ -32,6 +32,37 @@ document.addEventListener('DOMContentLoaded', () => {
         methods: {
             handleImageError(event) {
                 event.target.src = '/static/images/No image available.jpeg';
+            },
+            async updateQuantity(item, newQty) {
+                if (newQty < 1) return;
+                try {
+                    const res = await fetch(`/api/carts/items/${item.item_id}`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ quantity: newQty })
+                    });
+                    if (!res.ok) throw new Error('Error al actualizar');
+                    item.quantity = newQty;
+                    window.dispatchEvent(new CustomEvent('update-cart-count'));
+                } catch(e) {
+                    console.error('Error updating quantity:', e);
+                    showToast('Error al actualizar cantidad');
+                }
+            },
+            async removeItem(item) {
+                if (!confirm('¿Eliminar este producto del carrito?')) return;
+                try {
+                    const res = await fetch(`/api/carts/items/${item.item_id}`, {
+                        method: 'DELETE'
+                    });
+                    if (!res.ok) throw new Error('Error al eliminar');
+                    const idx = this.items.indexOf(item);
+                    if (idx > -1) this.items.splice(idx, 1);
+                    window.dispatchEvent(new CustomEvent('update-cart-count'));
+                } catch(e) {
+                    console.error('Error removing item:', e);
+                    showToast('Error al eliminar producto');
+                }
             }
         },
         mounted() {
