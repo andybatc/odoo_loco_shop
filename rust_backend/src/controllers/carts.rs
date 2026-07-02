@@ -1,7 +1,7 @@
 #![allow(clippy::missing_errors_doc)]
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
-use axum::{extract::State, Json};
+use axum::extract::{State, Json, Form};
 use axum::extract::Path;
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use loco_rs::prelude::*;
@@ -21,7 +21,7 @@ pub async fn add_to_cart(
     State(ctx): State<AppContext>,
     jar: CookieJar,
     headers: axum::http::HeaderMap,
-    Json(params): Json<AddItemParams>,
+    Form(params): Form<AddItemParams>,
 ) -> Result<(CookieJar, Json<serde_json::Value>), Error> {
 
     // 0. Validar que el producto exista y tenga stock

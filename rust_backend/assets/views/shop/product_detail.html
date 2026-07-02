@@ -46,7 +46,6 @@
                 <div class="mt-8 space-y-3">
                     <button
                         hx-post="/api/carts"
-                        hx-headers='{"Content-Type": "application/json"}'
                         hx-vals='{"product_id": {{ product.id }} }'
                         hx-swap="none"
                         hx-on::after-request="document.dispatchEvent(new CustomEvent('update-cart-count')); showToast('Producto agregado al carrito')"
