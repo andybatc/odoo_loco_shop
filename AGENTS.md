@@ -3,7 +3,7 @@
 ## Stack
 
 - **Backend**: Rust (edition 2021), Loco.rs 0.16 (Axum 0.8), SeaORM 1.1, PostgreSQL, Redis
-- **Frontend**: Vue 3 (global build), HTMX, Tailwind CSS, Tera templates
+- **Frontend**: Vue 3 (global build, prod), HTMX 1.9, Tailwind CSS v4, Tera templates
 - **ERP**: Odoo 18.0 (Python 3.12)
 - **Auth**: JWT (Loco), magic-link, cookie-based guest carts
 - **CI**: GitHub Actions (rustfmt + clippy + tests)
@@ -49,13 +49,39 @@ odoo_custom_addons/       # Odoo 18.0 addons (muk_web_*, odoo_rust_sync)
 - Caching: use `ctx.cache` (Redis) for product catalog; key pattern `"products:all"`
 - Config stored in `configs` DB table accessed via key/value pattern
 
+### Frontend conventions (HTMX/Vue separation)
+
+- **HTMX**: server-driven (POST/DELETE que cambian estado: add-to-cart, auth, logout)
+- **Vue 3**: UI reactiva client-side (menú lateral, carrito, checkout, búsqueda)
+- Comunicación HTMX ↔ Vue vía CustomEvents: `update-cart-count`, `abrir-menu-rust`
+- shop.js está eliminado (dead code, su addToCart duplicaba HTMX)
+- Todo `add-to-cart` usa HTMX con `hx-post="/api/carts"` + `hx-vals`
+- register.html usa `hx-ext="json-enc"` + `/static/js/json-enc.js` porque el handler Loco espera JSON
+- Data del server → `<script type="application/json">` (no data-attributes, evita escape bugs)
+
+### Tailwind CSS v4
+
+- Build command: `npx @tailwindcss/cli -i assets/static/css/tailwind-input.css -o assets/static/css/tailwind.css --minify`
+- Input CSS usa `@import "tailwindcss"` + `@source` (no `@tailwind base/components/utilities`)
+- Config en `tailwind.config.js` con `content:` paths (opcional en v4, auto-scan con `@source`)
+- Templates usan `<link href="/static/css/tailwind.css" rel="stylesheet">` (no script CDN)
+- register.html y login.html son standalone (no heredan base.html) — cada uno necesita sus propios `<link>` y `<script>`
+- `npm install -D tailwindcss @tailwindcss/cli` para instalar
+
+### Vue 3 global build
+
+- Usar `vue.global.prod.js` (165KB, sin warnings de dev)
+- Requiere `'unsafe-eval'` en CSP (template compiler vía new Function())
+- No hay Runtime-only build — el global build compila templates en runtime
+
+### Frontend critical rules
+
+- Todos los scripts JS/assets locales (NO CDN: ni Tailwind, ni HTMX, ni Vue)
+- shop.js está eliminado y NO debe reintroducirse
+- No agregar addToCart vía Vue/fetch en home.html — siempre HTMX
+- Tras cambios en templates, rebuild Tailwind: `npx @tailwindcss/cli -i ... -o ... --minify`
+
 ### Testing
-
-- Tests use `request::<App, _, _>(|request, _ctx| async move { ... })` pattern
-- Tests annotated with `#[tokio::test] #[serial]`
-- Run: `cargo test --all-features --all`
-
-### CRITICAL rules
 
 - NEVER add comments to code unless the user explicitly asks
 - NEVER create documentation (*.md) or README files unless explicitly requested
