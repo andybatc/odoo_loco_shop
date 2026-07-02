@@ -1,0 +1,21 @@
+{
+  "name": "rust_backend",
+  "version": "1.0.0",
+  "description": "[Loco](https://loco.rs) is a web and API framework running on Rust.",
+  "main": "tailwind.config.js",
+  "directories": {
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.2",
+    "tailwindcss": "^4.3.2"
+  }
+}
