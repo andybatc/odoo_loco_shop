@@ -47,7 +47,6 @@ pub struct CheckoutResponse {
 
 pub async fn checkout_page(
     State(ctx): State<AppContext>,
-    jar: CookieJar,
     ViewEngine(v): ViewEngine<TeraView>,
     headers: HeaderMap,
 ) -> Result<Response> {
@@ -56,15 +55,36 @@ pub async fn checkout_page(
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
-    let (items, total) = if let Some(cookie) = jar.get("rsv_cart_session") {
-        if let Ok(cart_uuid) = Uuid::parse_str(cookie.value()) {
-            let cart = cart_helpers::load_cart(&ctx, cart_uuid).await?;
-            (cart.items, cart.total)
-        } else {
-            (vec![], 0.0)
+    let (items, total) = if let Some(ref u) = user {
+        tracing::info!("🧾 checkout_page: usuario logueado {}, buscando carrito por user_id", u.pid);
+        let cart = carts::Entity::find()
+            .filter(carts::Column::UserId.eq(u.pid))
+            .one(&ctx.db)
+            .await?;
+        match cart {
+            Some(c) => {
+                let loaded = cart_helpers::load_cart(&ctx, c.id).await?;
+                tracing::info!("🧾 checkout_page: carrito encontrado, {} items", loaded.items.len());
+                (loaded.items, loaded.total)
+            }
+            None => {
+                tracing::info!("🧾 checkout_page: usuario sin carrito");
+                (vec![], 0.0)
+            }
         }
     } else {
-        (vec![], 0.0)
+        let cookie_val = headers
+            .get("cookie")
+            .and_then(|h| h.to_str().ok())
+            .and_then(|s| s.split(';').find(|p| p.trim().starts_with("rsv_cart_session=")))
+            .and_then(|s| s.split('=').nth(1).map(|v| v.trim().to_string()));
+        match cookie_val.and_then(|v| Uuid::parse_str(&v).ok()) {
+            Some(cart_uuid) => {
+                let cart = cart_helpers::load_cart(&ctx, cart_uuid).await?;
+                (cart.items, cart.total)
+            }
+            None => (vec![], 0.0),
+        }
     };
 
     let cached_methods: Option<Vec<payment_methods_entity::Model>> =
@@ -109,6 +129,7 @@ pub async fn checkout_page(
 pub(crate) async fn submit_checkout(
     State(ctx): State<AppContext>,
     jar: CookieJar,
+    headers: HeaderMap,
     Json(params): Json<CheckoutRequest>,
 ) -> Result<(CookieJar, Json<CheckoutResponse>)> {
     let email_re = regex::Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").unwrap();
@@ -140,35 +161,41 @@ pub(crate) async fn submit_checkout(
 
     let cookie_name = "rsv_cart_session";
 
-    let cart_uuid = match jar.get(cookie_name) {
-        Some(cookie) => match Uuid::parse_str(cookie.value()) {
-            Ok(id) => id,
-            Err(_) => {
-                return Ok((
-                    jar,
-                    Json(CheckoutResponse {
-                        success: false,
-                        order_name: None,
-                        invoice_name: None,
-                        total: None,
+    let cart_uuid = {
+        let cookie_header = headers.get("cookie").and_then(|h| h.to_str().ok());
+        let user = get_current_user(&ctx, cookie_header.map(|s| s.to_string())).await;
+        if let Some(ref u) = user {
+            let cart = carts::Entity::find()
+                .filter(carts::Column::UserId.eq(u.pid))
+                .one(&ctx.db)
+                .await?;
+            match cart {
+                Some(c) => c.id,
+                None => {
+                    tracing::info!("🧾 submit_checkout: usuario logueado sin carrito");
+                    return Ok((jar, Json(CheckoutResponse {
+                        success: false, order_name: None, invoice_name: None, total: None,
                         error: Some("Carrito no encontrado".to_string()),
-                    }),
-                ));
+                    })));
+                }
             }
-        },
-        None => {
-            return Ok((
-                jar,
-                Json(CheckoutResponse {
-                    success: false,
-                    order_name: None,
-                    invoice_name: None,
-                    total: None,
-                    error: Some("Carrito no encontrado".to_string()),
-                }),
-            ));
+        } else {
+            let cookie_val = headers.get("cookie")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|s| s.split(';').find(|p| p.trim().starts_with("rsv_cart_session=")))
+                .and_then(|s| s.split('=').nth(1).map(|v| v.trim().to_string()));
+            match cookie_val.and_then(|v| Uuid::parse_str(&v).ok()) {
+                Some(id) => id,
+                None => {
+                    return Ok((jar, Json(CheckoutResponse {
+                        success: false, order_name: None, invoice_name: None, total: None,
+                        error: Some("Carrito no encontrado".to_string()),
+                    })));
+                }
+            }
         }
     };
+    tracing::info!("🧾 submit_checkout: cart_uuid={}, email={}", cart_uuid, params.customer.email);
 
     let items = cart_items::Entity::find()
         .filter(cart_items::Column::CartId.eq(cart_uuid))

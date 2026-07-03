@@ -65,7 +65,7 @@ impl BackgroundWorker<OrderWorkerArgs> for OrderCreationWorker {
             })
         }).collect();
 
-        let mut payload = serde_json::json!({
+        let payload = serde_json::json!({
             "customer": {
                 "name": order.customer_name,
                 "email": order.customer_email,
