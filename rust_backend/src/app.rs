@@ -154,6 +154,7 @@ impl Hooks for App {
     async fn connect_workers(ctx: &AppContext, queue: &Queue) -> Result<()> {
         queue.register(crate::workers::webhook::WebhookWorker::build(ctx)).await?;
         queue.register(crate::workers::product_sync::Worker::build(ctx)).await?;
+        queue.register(crate::workers::order_creation::OrderCreationWorker::build(ctx)).await?;
         Ok(())
     }
 

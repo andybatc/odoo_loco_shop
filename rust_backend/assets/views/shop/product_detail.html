@@ -56,9 +56,10 @@
                             <button type="button"
                                     onclick="const qty = document.getElementById('product-qty'); qty.value = Math.max(1, parseInt(qty.value) - 1);"
                                     class="px-3 py-2 text-gray-600 hover:bg-gray-100 transition text-lg font-medium cursor-pointer">−</button>
-                            <input id="product-qty" type="number" value="1" min="1" max="99"
-                                   class="w-14 text-center py-2 border-x border-gray-300 text-sm font-medium [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-                                   onchange="if(this.value < 1) this.value = 1; if(this.value > 99) this.value = 99;">
+                            <input id="product-qty" type="text" value="1"
+                                   class="w-14 text-center py-2 border-x border-gray-300 text-sm font-medium"
+                                   inputmode="numeric" pattern="[0-9]*"
+                                   onchange="const v = parseInt(this.value) || 1; this.value = Math.min(99, Math.max(1, v));">
                             <button type="button"
                                     onclick="const qty = document.getElementById('product-qty'); qty.value = Math.min(99, parseInt(qty.value) + 1);"
                                     class="px-3 py-2 text-gray-600 hover:bg-gray-100 transition text-lg font-medium cursor-pointer">+</button>

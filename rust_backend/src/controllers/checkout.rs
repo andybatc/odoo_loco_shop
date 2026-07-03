@@ -3,10 +3,11 @@
 #![allow(clippy::unused_async)]
 
 use crate::controllers::views::get_current_user;
-use crate::models::_entities::{cart_items, carts, configs, order_items, products};
+use crate::models::_entities::{cart_items, carts, order_items, products};
 use crate::models::_entities::orders as orders_entity;
 use crate::models::_entities::payment_methods as payment_methods_entity;
 use crate::models::cart_helpers;
+use crate::workers::order_creation::{OrderCreationWorker, OrderWorkerArgs};
 use axum::extract::Query;
 use axum::http::HeaderMap;
 use axum_extra::extract::cookie::{Cookie, CookieJar};
@@ -201,19 +202,11 @@ pub(crate) async fn submit_checkout(
         ?;
 
     let mut total = sea_orm::prelude::Decimal::ZERO;
-    let mut odoo_items = Vec::new();
     for prod in &db_products {
         let qty = *item_map.get(&prod.id).unwrap_or(&1);
         let price = prod.price.unwrap_or(sea_orm::prelude::Decimal::ZERO);
-        let price_f64 = price.to_string().parse::<f64>().unwrap_or(0.0);
         let subtotal = price * sea_orm::prelude::Decimal::from(qty as i64);
         total += subtotal;
-        odoo_items.push(serde_json::json!({
-            "product_id": prod.id,
-            "name": prod.name.clone().unwrap_or_else(|| "Product".to_string()),
-            "price": price_f64,
-            "quantity": qty,
-        }));
     }
 
     let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
@@ -250,154 +243,29 @@ pub(crate) async fn submit_checkout(
     }).collect();
     order_items::Entity::insert_many(order_items_to_insert).exec(&ctx.db).await?;
 
-    let config = configs::Entity::find()
-        .filter(configs::Column::Key.eq("webhook_token"))
-        .one(&ctx.db)
-        .await
-        ?;
+    let worker_args = OrderWorkerArgs { order_id };
+    OrderCreationWorker::perform_later(&ctx, worker_args).await?;
 
-    let token = config.and_then(|c| c.value).unwrap_or_default();
+    cart_items::Entity::delete_many()
+        .filter(cart_items::Column::CartId.eq(cart_uuid))
+        .exec(&ctx.db)
+        .await?;
+    carts::Entity::delete_by_id(cart_uuid)
+        .exec(&ctx.db)
+        .await?;
 
-    let odoo_domain = configs::Entity::find()
-        .filter(configs::Column::Key.eq("odoo_base_url"))
-        .one(&ctx.db)
-        .await?
-        .and_then(|c| c.value)
-        .unwrap_or_else(|| "http://localhost:8072".to_string());
+    let jar = jar.remove(Cookie::new(cookie_name, ""));
 
-    let odoo_url = format!("{}/api/orders/create", odoo_domain);
-
-    let mut payload = serde_json::json!({
-        "customer": {
-            "name": params.customer.name,
-            "email": params.customer.email,
-            "phone": params.customer.phone,
-            "street": params.customer.street,
-            "city": params.customer.city,
-            "zip": params.customer.zip,
-        },
-        "items": odoo_items,
-    });
-
-    if let Some(pm_id) = params.payment_method_id {
-        payload["payment_method_id"] = serde_json::json!(pm_id);
-    }
-
-    let client = reqwest::Client::new();
-    let response = client
-        .post(odoo_url)
-        .header("Authorization", format!("Bearer {}", token))
-        .json(&payload)
-        .send()
-        .await;
-
-    match response {
-        Ok(resp) => {
-            if !resp.status().is_success() {
-                let status = resp.status();
-                let body = resp.text().await.unwrap_or_default();
-                orders_entity::ActiveModel {
-                    id: Set(order_id),
-                    status: Set("failed".to_string()),
-                    ..Default::default()
-                }.update(&ctx.db).await?;
-                return Ok((
-                    jar,
-                    Json(CheckoutResponse {
-                        success: false,
-                        order_name: None,
-                        invoice_name: None,
-                        total: Some(total_f64),
-                        error: Some(format!(
-                            "Odoo respondió con error {}: {}",
-                            status, body
-                        )),
-                    }),
-                ));
-            }
-
-            let odoo_resp: serde_json::Value = resp.json().await.unwrap_or_default();
-
-            if odoo_resp.get("error").is_some() {
-                orders_entity::ActiveModel {
-                    id: Set(order_id),
-                    status: Set("failed".to_string()),
-                    ..Default::default()
-                }.update(&ctx.db).await?;
-                return Ok((
-                    jar,
-                    Json(CheckoutResponse {
-                        success: false,
-                        order_name: None,
-                        invoice_name: None,
-                        total: Some(total_f64),
-                        error: Some(odoo_resp["error"]
-                            .as_str()
-                            .unwrap_or("Error desconocido de Odoo")
-                            .to_string()),
-                    }),
-                ));
-            }
-
-            let order_name = odoo_resp["order_name"]
-                .as_str()
-                .map(|s| s.to_string());
-            let invoice_name = odoo_resp["invoice_name"]
-                .as_str()
-                .map(|s| s.to_string());
-
-            let confirmed_model = orders_entity::ActiveModel {
-                id: Set(order_id),
-                status: Set("confirmed".to_string()),
-                odoo_order_name: Set(order_name.clone()),
-                odoo_invoice_name: Set(invoice_name.clone()),
-                ..Default::default()
-            }.update(&ctx.db).await?;
-
-            let _ = crate::mailers::order::OrderMailer::send_confirmation(&ctx, &confirmed_model).await;
-
-            cart_items::Entity::delete_many()
-                .filter(cart_items::Column::CartId.eq(cart_uuid))
-                .exec(&ctx.db)
-                .await
-                ?;
-
-            carts::Entity::delete_by_id(cart_uuid)
-                .exec(&ctx.db)
-                .await
-                ?;
-
-            let jar = jar.remove(Cookie::new(cookie_name, ""));
-
-            Ok((
-                jar,
-                Json(CheckoutResponse {
-                    success: true,
-                    order_name,
-                    invoice_name,
-                    total: Some(total_f64),
-                    error: None,
-                }),
-            ))
-        }
-        Err(e) => {
-            orders_entity::ActiveModel {
-                id: Set(order_id),
-                status: Set("failed".to_string()),
-                ..Default::default()
-            }.update(&ctx.db).await?;
-            Ok((
-                jar,
-                Json(CheckoutResponse {
-                    success: false,
-                    order_name: None,
-                    invoice_name: None,
-                    total: Some(total_f64),
-                    error: Some(format!("Error de conexión con Odoo: {}", e)),
-                }),
-            ))
-        }
-    }
+    Ok((
+        jar,
+        Json(CheckoutResponse {
+            success: true,
+            order_name: None,
+            invoice_name: None,
+            total: Some(total_f64),
+            error: None,
+        }),
+    ))
 }
 
 pub async fn order_success(
