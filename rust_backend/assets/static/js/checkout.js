@@ -8,19 +8,21 @@ const app = Vue.createApp({
     delimiters: ['[[', ']]'],
     data() {
         const el = document.getElementById('checkout-app');
+        const userData = parseJsonScript('checkout-user-data') || {};
         return {
             items: parseJsonScript('checkout-items') || [],
             totalGeneral: parseFloat(el?.getAttribute('data-total') || '0'),
             paymentMethods: parseJsonScript('checkout-payment-methods') || [],
             selectedPaymentId: null,
             customer: {
-                name: '',
-                email: '',
-                phone: '',
-                street: '',
-                city: '',
-                zip: '',
+                name: userData.name || '',
+                email: userData.email || '',
+                phone: userData.phone || '',
+                street: userData.street || '',
+                city: userData.city || '',
+                zip: userData.zip || '',
             },
+            userData: Object.keys(userData).length > 0 ? userData : null,
             submitting: false,
             errorMessage: '',
         };

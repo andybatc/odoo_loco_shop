@@ -3,7 +3,7 @@
 #![allow(clippy::unused_async)]
 
 use crate::controllers::views::get_current_user;
-use crate::models::_entities::{cart_items, carts, order_items, products};
+use crate::models::_entities::{cart_items, carts, order_items, products, users};
 use crate::models::_entities::orders as orders_entity;
 use crate::models::_entities::payment_methods as payment_methods_entity;
 use crate::models::cart_helpers;
@@ -105,6 +105,16 @@ pub async fn checkout_page(
         methods
     };
 
+    let user_data = user.as_ref().map(|u| serde_json::json!({
+        "name": u.name,
+        "email": u.email,
+        "phone": u.phone,
+        "street": u.street,
+        "city": u.city,
+        "zip": u.zip,
+    }));
+    tracing::debug!("checkout_page: user={:?}, user_data={:?}", user.as_ref().map(|u| u.email.as_str()), user_data);
+
     format::render().view(
         &v,
         "shop/checkout.html",
@@ -112,6 +122,7 @@ pub async fn checkout_page(
             "items": items,
             "total": total,
             "current_user": user,
+            "user_data": user_data,
             "payment_methods": payment_methods,
         }),
     )
@@ -238,9 +249,12 @@ pub(crate) async fn submit_checkout(
 
     let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
 
+    let checkout_user = get_current_user(&ctx, headers.get("cookie").and_then(|h| h.to_str().ok()).map(|s| s.to_string())).await;
+
     let order_id = Uuid::new_v4();
     let order = orders_entity::ActiveModel {
         id: Set(order_id),
+        user_id: Set(checkout_user.as_ref().map(|u| u.id)),
         customer_name: Set(params.customer.name.clone()),
         customer_email: Set(params.customer.email.clone()),
         customer_phone: Set(params.customer.phone.clone()),
@@ -282,6 +296,17 @@ pub(crate) async fn submit_checkout(
         .await?;
 
     let jar = jar.remove(Cookie::new(cookie_name, ""));
+
+    // ponytail: save checkout data to user profile if logged in
+    if let Some(ref user) = checkout_user {
+        use sea_orm::ActiveValue::Set;
+        let mut active: users::ActiveModel = user.clone().into();
+        if let Some(v) = &params.customer.phone { if !v.is_empty() { active.phone = Set(Some(v.clone())); } }
+        if let Some(v) = &params.customer.street { if !v.is_empty() { active.street = Set(Some(v.clone())); } }
+        if let Some(v) = &params.customer.city { if !v.is_empty() { active.city = Set(Some(v.clone())); } }
+        if let Some(v) = &params.customer.zip { if !v.is_empty() { active.zip = Set(Some(v.clone())); } }
+        active.update(&ctx.db).await.ok();
+    }
 
     Ok((
         jar,

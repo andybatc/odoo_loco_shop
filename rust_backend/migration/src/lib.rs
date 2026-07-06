@@ -19,6 +19,8 @@ mod m20260622_000005_add_performance_indexes;
 mod m20260630_000001_payment_methods;
 mod m20260701_000001_fix_payment_methods_tz;
 mod m20260702_000001_fix_orders_tz;
+mod m20260703_000001_add_profile_fields_to_users;
+mod m20260703_000002_add_tax_percent_to_products;
 pub struct Migrator;
 
 #[async_trait::async_trait]
@@ -42,6 +44,8 @@ impl MigratorTrait for Migrator {
             Box::new(m20260630_000001_payment_methods::Migration),
             Box::new(m20260701_000001_fix_payment_methods_tz::Migration),
             Box::new(m20260702_000001_fix_orders_tz::Migration),
+            Box::new(m20260703_000001_add_profile_fields_to_users::Migration),
+            Box::new(m20260703_000002_add_tax_percent_to_products::Migration),
             // inject-above (do not remove this comment)
         ]
     }

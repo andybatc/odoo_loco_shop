@@ -2,11 +2,12 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 use crate::controllers::auth as auth_controller;
-use crate::models::_entities::{users, configs, carts};
+use crate::models::_entities::{users, configs, carts, orders as orders_entity};
 use crate::models::cart_helpers;
 use crate::models::config_cache;
 use crate::models::users::LoginParams;
 use crate::views::auth::LoginResponse;
+use axum::extract::Form;
 use axum::http::HeaderMap;
 use loco_rs::auth::jwt::JWT;
 use loco_rs::controller::views::engines::TeraView;
@@ -16,6 +17,7 @@ use loco_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use regex::Regex;
+use sea_orm::QueryOrder;
 use uuid::Uuid;
 
 #[derive(Serialize)]
@@ -126,6 +128,103 @@ async fn register_display() -> Result<Response> {
     let html = std::fs::read_to_string("assets/views/auth/register.html")
         .map_err(|_| Error::string("No se encuentra la plantilla de registro"))?;
     format::html(&html)
+}
+
+#[derive(Deserialize)]
+pub struct ProfileForm {
+    pub name: String,
+    pub email: String,
+    pub phone: Option<String>,
+    pub street: Option<String>,
+    pub city: Option<String>,
+    pub zip: Option<String>,
+}
+
+pub async fn profile_page(
+    ViewEngine(v): ViewEngine<TeraView>,
+    State(ctx): State<AppContext>,
+    headers: HeaderMap,
+    jar: CookieJar,
+) -> Result<(CookieJar, Response)> {
+    let cookie_header = headers
+        .get("cookie")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let user = get_current_user(&ctx, cookie_header).await;
+
+    if user.is_none() {
+        let html = std::fs::read_to_string("assets/static/403.html")
+            .map_err(|_| Error::string("Error al cargar la página de acceso denegado"))?;
+        let response = Response::builder()
+            .status(axum::http::StatusCode::FORBIDDEN)
+            .header("content-type", "text/html")
+            .body(axum::body::Body::from(html))
+            .map_err(|_| Error::string("Error al generar respuesta"))?;
+        return Ok((jar, response));
+    }
+
+    let response = format::render().view(
+        &v,
+        "auth/profile.html",
+        serde_json::json!({
+            "current_user": user,
+        }),
+    )?;
+
+    Ok((jar, response))
+}
+
+#[debug_handler]
+pub async fn update_profile(
+    ViewEngine(v): ViewEngine<TeraView>,
+    State(ctx): State<AppContext>,
+    headers: HeaderMap,
+    jar: CookieJar,
+    Form(form): Form<ProfileForm>,
+) -> Result<(CookieJar, Response)> {
+    let cookie_header = headers
+        .get("cookie")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let user = get_current_user(&ctx, cookie_header).await;
+
+    let Some(user) = user else {
+        let html = std::fs::read_to_string("assets/static/403.html")
+            .map_err(|_| Error::string("Error al cargar la página de acceso denegado"))?;
+        let response = Response::builder()
+            .status(axum::http::StatusCode::FORBIDDEN)
+            .header("content-type", "text/html")
+            .body(axum::body::Body::from(html))
+            .map_err(|_| Error::string("Error al generar respuesta"))?;
+        return Ok((jar, response));
+    };
+
+    use sea_orm::ActiveValue::Set;
+    let mut active: users::ActiveModel = user.clone().into();
+    active.name = Set(form.name);
+    active.email = Set(form.email);
+    active.phone = Set(form.phone);
+    active.street = Set(form.street);
+    active.city = Set(form.city);
+    active.zip = Set(form.zip);
+    active.update(&ctx.db).await.map_err(|e| {
+        tracing::error!("Error actualizando perfil: {:?}", e);
+        Error::string("Error al guardar los datos del perfil")
+    })?;
+
+    let updated_user = users::Entity::find_by_id(user.id)
+        .one(&ctx.db)
+        .await
+        .map_err(|_| Error::string("Error al cargar perfil"))?;
+
+    let response = format::render().view(
+        &v,
+        "auth/profile.html",
+        serde_json::json!({
+            "current_user": updated_user,
+            "success": true,
+        }),
+    )?;
+
+    Ok((jar, response))
 }
 
 #[derive(Deserialize)]
@@ -325,12 +424,55 @@ async fn handle_config_update(
     Ok((jar, response))
 }
 
+pub async fn orders_page(
+    ViewEngine(v): ViewEngine<TeraView>,
+    State(ctx): State<AppContext>,
+    headers: HeaderMap,
+    jar: CookieJar,
+) -> Result<(CookieJar, Response)> {
+    let cookie_header = headers
+        .get("cookie")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let user = get_current_user(&ctx, cookie_header).await;
+
+    let Some(ref u) = user else {
+        let html = std::fs::read_to_string("assets/static/403.html")
+            .map_err(|_| Error::string("Error al cargar la página de acceso denegado"))?;
+        let response = Response::builder()
+            .status(axum::http::StatusCode::FORBIDDEN)
+            .header("content-type", "text/html")
+            .body(axum::body::Body::from(html))
+            .map_err(|_| Error::string("Error al generar respuesta"))?;
+        return Ok((jar, response));
+    };
+
+    let orders: Vec<orders_entity::Model> = orders_entity::Entity::find()
+        .filter(orders_entity::Column::UserId.eq(u.id))
+        .order_by_desc(orders_entity::Column::CreatedAt)
+        .all(&ctx.db)
+        .await?;
+
+    let response = format::render().view(
+        &v,
+        "shop/orders.html",
+        serde_json::json!({
+            "current_user": user,
+            "orders": orders,
+        }),
+    )?;
+
+    Ok((jar, response))
+}
+
 pub fn routes() -> Routes {
     Routes::new()
         .add("/cart", get(cart_display))
         .add("/ui/auth/web-login", get(login_display))
         .add("/ui/auth/web-login", post(login_web))
         .add("/ui/auth/web-register", get(register_display))
+        .add("/ui/auth/profile", get(profile_page))
+        .add("/ui/auth/profile", post(update_profile))
+        .add("/ui/auth/orders", get(orders_page))
         .add("/ui/auth/config", get(config_page))
         .add("/ui/auth/config", post(handle_config_update))
 }
