@@ -19,3 +19,4 @@ rust_backend/.env
 # --- Docker & Logs ---
 *.log
 docker_config/db_data/
+*.snap.new
