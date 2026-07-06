@@ -1,7 +1,7 @@
 # Odoo Loco Shop — Roadmap y Mejoras
 
 > Consolidado de los análisis: exploración de código, investigación de mejores prácticas Odoo+Loco.rs, y revisión UX/UI.
-> Fecha: 2026-07-02 — Actualizado: 2026-07-02 (sesión fixes críticos + UI)
+> Fecha: 2026-07-02 — Actualizado: 2026-07-06 (perfil usuario + mis pedidos + impuestos + monitoreo)
 
 ---
 
@@ -76,9 +76,9 @@ Las carencias principales para llegar a producción real son: **pasarela de pago
 | Toast notifications | ✅ Completo |
 | Seguridad (CSP, CORS, CSRF) | ✅ Completo |
 | Error pages (403/404/500) | ✅ Completo |
-| **Mis Órdenes (usuario)** | ❌ Ausente |
+| **Mis Órdenes (usuario)** | ✅ Completo | `/ui/auth/orders` |
 | **Wishlist** | ❌ Ausente |
-| **Perfil de usuario** | ❌ Ausente |
+| **Perfil de usuario** | ✅ Completo | `/ui/auth/profile` |
 | **Password reset UI** | ❌ Ausente |
 
 ---
@@ -91,11 +91,14 @@ Los métodos de pago se sincronizan desde Odoo como metadata. No hay integració
 ### 🔴 Stock hardcodeado a 0.0 ✅ FIXED
 `workers/product_sync.rs` ahora consulta `product_product.qty_available` vía SQL directo. Stock se actualiza correctamente en cada sync.
 
-### 🔴 Checkout sin envío ni impuestos
-No hay selección de `delivery.carrier`, no se muestran impuestos (`account.tax`). El total que ve el usuario no es el real.
+### 🟡 Envío sin integración
+No hay selección de `delivery.carrier` desde Odoo. El envío se muestra como "Gratis" fijo.
 
-### 🔴 Sin historial de órdenes para usuarios
-La relación `orders.user_id` existe en DB pero no hay vista "Mis Órdenes" ni detalle de orden individual.
+### 🟢 Impuestos cargados desde Odoo ✅ HECHO
+`workers/product_sync.rs` ahora consulta `product_taxes_rel` + `account_tax` para cargar el % de IVA por producto. Se almacena como `tax_percent` en la tabla `products`. Se muestra en la página de detalle del producto.
+
+### 🟢 Historial de órdenes para usuarios ✅ HECHO
+Nueva página `/ui/auth/orders` que lista las órdenes del usuario logueado (por `user_id`). Menú desplegable en avatar con acceso a "Mi Perfil" y "Mis Pedidos".
 
 ### 🟡 Carrito ahora carga para usuarios logueados ✅ FIXED
 `cart_display` y `get_cart_items` buscan el carrito por `user_id` (PID) si el usuario está autenticado, en vez de solo por cookie. Pendiente: fusionar carrito guest al hacer login.
@@ -112,8 +115,9 @@ Objetivo: la tienda puede operar y cobrar.
 |-------|------|--------------|
 | 1.1 | Integrar pasarela de pago (Stripe/PayPal/MercadoPago) | Backend + Frontend | Odoo payment provider |
 | 1.2 | ✅ Sincronizar stock real desde Odoo | Backend | Odoo `stock.quant` / `stock.move` |
-| 1.3 | Checkout completo: selección de envío + impuestos visibles | Backend + Frontend | Odoo `delivery.carrier`, `account.tax` |
-| 1.4 | Perfil de usuario + historial de órdenes | Frontend + Backend | — |
+| 1.3 | 🟡 Selección de envío desde Odoo | Backend + Frontend | Odoo `delivery.carrier` |
+| 1.4 | ✅ Perfil de usuario + historial de órdenes | Frontend + Backend | — |
+| 1.4a | ✅ Impuestos cargados desde Odoo (`tax_percent`) | Backend | `account_tax` |
 | 1.5 | 🟡 Carrito funcional para usuarios logueados | Backend | — |
 | 1.6 | Rate limiting en todas las rutas públicas | Backend | — |
 | 1.7 | Retry queue en Odoo para webhooks | Odoo | — |

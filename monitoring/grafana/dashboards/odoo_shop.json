@@ -1,0 +1,69 @@
+{
+  "title": "Odoo Shop",
+  "uid": "odoo_shop",
+  "tags": ["odoo", "rust"],
+  "schemaVersion": 39,
+  "version": 1,
+  "panels": [
+    {
+      "title": "Rust — HTTP Requests Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" }
+      },
+      "targets": [{
+        "expr": "rate(http_requests_total[1m])",
+        "legendFormat": "{{method}} {{path}}"
+      }]
+    },
+    {
+      "title": "Rust — HTTP Error Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" }
+      },
+      "targets": [{
+        "expr": "rate(http_requests_total{status=~\"5..\"}[1m])",
+        "legendFormat": "5xx"
+      }]
+    },
+    {
+      "title": "Rust — HTTP Duration (p50 / p95)",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      },
+      "targets": [
+        { "expr": "histogram_quantile(0.5, rate(http_request_duration_seconds_bucket[1m]))", "legendFormat": "p50" },
+        { "expr": "histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[1m]))", "legendFormat": "p95" }
+      ]
+    },
+    {
+      "title": "Odoo — Active Users",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "odoo_users_total" }]
+    },
+    {
+      "title": "Odoo — Published Products",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [{ "expr": "odoo_products_total" }]
+    },
+    {
+      "title": "Odoo — Sync Duration",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": {
+        "defaults": { "unit": "s" }
+      },
+      "targets": [{
+        "expr": "rate(odoo_sync_duration_seconds_sum[1m]) / rate(odoo_sync_duration_seconds_count[1m])",
+        "legendFormat": "avg sync duration"
+      }]
+    }
+  ]
+}
