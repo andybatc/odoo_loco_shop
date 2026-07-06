@@ -20,6 +20,7 @@ pub struct Model {
     pub image_filename: Option<String>,
     pub is_published: bool,
     pub category: Option<String>,
+    pub tax_percent: Option<Decimal>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

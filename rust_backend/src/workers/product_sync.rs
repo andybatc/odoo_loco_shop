@@ -54,6 +54,27 @@ impl BackgroundWorker<WorkerArgs> for Worker {
                 .collect()
         };
 
+        let tax_map: std::collections::HashMap<i32, f64> = {
+            let rows = odoo_db
+                .query_all(Statement::from_string(
+                    odoo_db.get_database_backend(),
+                    "SELECT ptr.prod_id, COALESCE(SUM(at.amount), 0)
+                     FROM product_taxes_rel ptr
+                     JOIN account_tax at ON at.id = ptr.tax_id
+                     WHERE at.type_tax_use = 'sale'
+                     GROUP BY ptr.prod_id".to_string(),
+                ))
+                .await
+                .unwrap_or_default();
+            rows.into_iter()
+                .filter_map(|r| {
+                    let prod_id: i32 = r.try_get_by_index::<i32>(0).ok()?;
+                    let tax_val: f64 = r.try_get_by_index::<f64>(1).ok().unwrap_or(0.0);
+                    Some((prod_id, tax_val))
+                })
+                .collect()
+        };
+
         let odoo_products = product_template_odoo::Entity::find()
             .filter(product_template_odoo::Column::IsPublished.eq(true))
             .all(&odoo_db)
@@ -85,6 +106,8 @@ impl BackgroundWorker<WorkerArgs> for Worker {
                 _ => 0.0,
             };
 
+            let tax_percent = tax_map.get(&item.id).copied().map(|v| Decimal::new((v * 100.0).round() as i64, 2).normalize());
+
             let active_product = products::ActiveModel {
                 odoo_id: Set(Some(item.id)),
                 name: Set(Some(name_string.to_string())),
@@ -92,6 +115,7 @@ impl BackgroundWorker<WorkerArgs> for Worker {
                 price: Set(Some(item.list_price.unwrap_or_default())),
                 stock: Set(Some(stock_value)),
                 category: Set(category_name),
+                tax_percent: Set(tax_percent),
                 ..Default::default()
             };
 
@@ -104,6 +128,7 @@ impl BackgroundWorker<WorkerArgs> for Worker {
                             products::Column::Price,
                             products::Column::Stock,
                             products::Column::Category,
+                            products::Column::TaxPercent,
                         ])
                         .to_owned()
                 )

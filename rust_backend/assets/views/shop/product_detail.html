@@ -42,6 +42,9 @@
                             Consultar precio
                             {% endif %}
                         </span>
+                        {% if product.tax_percent %}
+                        <p class="text-xs text-gray-400 mt-1">IVA {{ product.tax_percent }}% incluido</p>
+                        {% endif %}
                     </div>
                     {% if product.stock == 0 %}
                     <p class="text-sm mt-2 text-red-500">Agotado</p>
