@@ -8,6 +8,15 @@
 - **Auth**: JWT (Loco), magic-link, cookie-based guest carts
 - **CI**: GitHub Actions (rustfmt + clippy + tests)
 
+## Odoo
+
+- **Path**: `~/Odoo/odoo-18.0/odoo-18.0/`
+- **Virtual env**: `~/Entornos virtuales/odoo18/.venv/` (UV-managed)
+- **Activation** (fish): `source "Entornos virtuales/odoo18/.venv/bin/activate.fish"`
+- **Activation** (bash): `source "Entornos virtuales/odoo18/.venv/bin/activate"`
+- **Run**: `./odoo-bin -c odoo_prod.conf` (desde la raíz de Odoo, con venv activado)
+- **prometheus-client** ya instalado en el venv
+
 ## Project structure
 
 ```

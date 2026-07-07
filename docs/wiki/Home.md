@@ -9,6 +9,7 @@ Catálogo web de alto rendimiento con Odoo 18 como ERP y un frontend/backend des
 - [Odoo Integration](./Odoo-Integration)
 - [Development](./Development)
 - [API Reference](./API)
+- [Monitoring](./Monitoring)
 
 ## Stack
 

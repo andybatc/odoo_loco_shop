@@ -14,6 +14,9 @@ try:
     ODOO_DB_CONNECTIONS = Gauge("odoo_db_connections", "Current DB connections")
     ODOO_USERS_TOTAL = Gauge("odoo_users_total", "Total active users")
     ODOO_PRODUCTS_TOTAL = Gauge("odoo_products_total", "Total published products")
+    ODOO_PRODUCTS_UNPUBLISHED = Gauge("odoo_products_unpublished", "Total unpublished products")
+    ODOO_PRODUCTS_NO_STOCK = Gauge("odoo_products_no_stock", "Products with zero stock")
+    ODOO_PRODUCTS_LOW_STOCK = Gauge("odoo_products_low_stock", "Products with low stock (1-10 units)")
     ODOO_SALE_ORDERS = Counter(
         "odoo_sale_orders_total", "Total sale orders created"
     )
@@ -46,10 +49,21 @@ class PrometheusMetricsController(http.Controller):
             pass
 
         try:
-            ODOO_PRODUCTS_TOTAL.set(
-                request.env["product.template"]
-                .sudo()
-                .search_count([("sale_ok", "=", True)])
+            products = request.env["product.template"].sudo()
+            ODOO_PRODUCTS_TOTAL.set(products.search_count([("sale_ok", "=", True)]))
+            ODOO_PRODUCTS_UNPUBLISHED.set(products.search_count([("sale_ok", "=", False)]))
+        except Exception:
+            pass
+
+        try:
+            product_variants = request.env["product.product"].sudo()
+            ODOO_PRODUCTS_NO_STOCK.set(
+                product_variants.search_count([("sale_ok", "=", True), ("qty_available", "<=", 0)])
+            )
+            ODOO_PRODUCTS_LOW_STOCK.set(
+                product_variants.search_count(
+                    [("sale_ok", "=", True), ("qty_available", ">", 0), ("qty_available", "<=", 10)]
+                )
             )
         except Exception:
             pass

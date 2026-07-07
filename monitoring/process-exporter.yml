@@ -1,0 +1,13 @@
+process_names:
+  - name: "rust"
+    cmdline:
+      - "odoo_shop-cli"
+  - name: "odoo"
+    cmdline:
+      - "odoo-bin"
+  - name: "postgres"
+    cmdline:
+      - "postgres"
+  - name: "redis"
+    cmdline:
+      - "redis-server"

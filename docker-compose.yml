@@ -1,93 +1,34 @@
 services:
-  postgres:
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-      POSTGRES_DB: odoo_shop_development
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    ports:
-      - "5432:5432"
-
-  redis:
-    image: redis:7-alpine
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-    ports:
-      - "6379:6379"
-
-  rust_backend:
-    build: ./rust_backend
-    ports:
-      - "5150:5150"
-    environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/odoo_shop_development
-      REDIS_URL: redis://redis:6379
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    volumes:
-      - product_images:/app/storage/products
-
-  odoo:
-    build: ./odoo_custom_addons
-    profiles: ["full"]
-    ports:
-      - "8069:8069"
-    environment:
-      HOST: postgres
-      USER: postgres
-      PASSWORD: postgres
-      DB_NAME: odoo_prod
-    command: odoo -d odoo_prod -i muk_web_theme,odoo_rust_sync --without-demo=all
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - odoo_data:/var/lib/odoo
-      - ./odoo_custom_addons:/mnt/extra-addons
-
   prometheus:
     image: prom/prometheus:latest
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-      - "--storage.tsdb.path=/prometheus"
     restart: unless-stopped
+    network_mode: host
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
 
   grafana:
     image: grafana/grafana:latest
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources:ro
-      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_INSTALL_PLUGINS: ""
     restart: unless-stopped
-    depends_on:
-      - prometheus
+    network_mode: host
+    volumes:
+      - ./monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./monitoring/grafana/dashboards/odoo_shop.json:/etc/grafana/provisioning/dashboards/odoo_shop.json:ro
+      - grafana_data:/var/lib/grafana
+
+  process-exporter:
+    image: ncabatoff/process-exporter:latest
+    restart: unless-stopped
+    pid: host
+    network_mode: host
+    volumes:
+      - /proc:/host/proc:ro
+      - ./monitoring/process-exporter.yml:/config/process-exporter.yml:ro
+    command:
+      - --config.path=/config/process-exporter.yml
+      - --procfs=/host/proc
 
 volumes:
-  postgres_data:
-  product_images:
-  odoo_data:
   prometheus_data:
   grafana_data:
