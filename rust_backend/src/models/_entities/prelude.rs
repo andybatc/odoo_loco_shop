@@ -7,4 +7,5 @@ pub use super::order_items::Entity as OrderItems;
 pub use super::orders::Entity as Orders;
 pub use super::payment_methods::Entity as PaymentMethods;
 pub use super::products::Entity as Products;
+pub use super::shipping_rates::Entity as ShippingRates;
 pub use super::users::Entity as Users;

@@ -13,6 +13,8 @@ const app = Vue.createApp({
             items: parseJsonScript('checkout-items') || [],
             totalGeneral: parseFloat(el?.getAttribute('data-total') || '0'),
             paymentMethods: parseJsonScript('checkout-payment-methods') || [],
+            shippingCost: null,
+            shippingOrigin: '',
             selectedPaymentId: null,
             customer: {
                 name: userData.name || '',
@@ -21,6 +23,8 @@ const app = Vue.createApp({
                 street: userData.street || '',
                 city: userData.city || '',
                 zip: userData.zip || '',
+                country: userData.country || '',
+                state: userData.state || '',
             },
             userData: Object.keys(userData).length > 0 ? userData : null,
             submitting: false,

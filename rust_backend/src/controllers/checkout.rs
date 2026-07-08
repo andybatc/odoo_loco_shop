@@ -3,7 +3,7 @@
 #![allow(clippy::unused_async)]
 
 use crate::controllers::views::get_current_user;
-use crate::models::_entities::{cart_items, carts, order_items, products, users};
+use crate::models::_entities::{cart_items, carts, order_items, products, shipping_rates, users};
 use crate::models::_entities::orders as orders_entity;
 use crate::models::_entities::payment_methods as payment_methods_entity;
 use crate::models::cart_helpers;
@@ -28,6 +28,8 @@ pub struct CustomerInfo {
     pub street: Option<String>,
     pub city: Option<String>,
     pub zip: Option<String>,
+    pub country: Option<String>,
+    pub state: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -112,8 +114,14 @@ pub async fn checkout_page(
         "street": u.street,
         "city": u.city,
         "zip": u.zip,
+        "country": u.country,
+        "state": u.state,
     }));
     tracing::debug!("checkout_page: user={:?}, user_data={:?}", user.as_ref().map(|u| u.email.as_str()), user_data);
+
+    // ponytail: pass rates for client-side estimation display
+    let shipping_rates_list = shipping_rates::Entity::find().all(&ctx.db).await.unwrap_or_default();
+    let shipping_rates_json = serde_json::to_value(&shipping_rates_list).unwrap_or_default();
 
     format::render().view(
         &v,
@@ -124,8 +132,49 @@ pub async fn checkout_page(
             "current_user": user,
             "user_data": user_data,
             "payment_methods": payment_methods,
+            "shipping_rates": shipping_rates_json,
         }),
     )
+}
+
+pub(crate) async fn calc_shipping(
+    db: &DatabaseConnection,
+    items: &[products::Model],
+    country: &str,
+    state: &str,
+) -> Result<(sea_orm::prelude::Decimal, String), sea_orm::DbErr> {
+    // ponytail: consolidate by highest rate — safest assumption for furthest product
+    let mut origins: Vec<(&str, &str)> = Vec::new();
+    for product in items {
+        if let (Some(c), Some(s)) = (&product.warehouse_country, &product.warehouse_state) {
+            if !origins.iter().any(|(oc, os)| oc == c && os == s) {
+                origins.push((c, s));
+            }
+        }
+    }
+
+    if origins.is_empty() {
+        return Ok((sea_orm::prelude::Decimal::ZERO, "Sin origen definido".to_string()));
+    }
+
+    let mut max_rate = sea_orm::prelude::Decimal::ZERO;
+    let mut origin_desc = String::new();
+
+    for (oc, os) in &origins {
+        let rate = match crate::models::shipping_rates::find_rate(db, oc, os, country, state).await? {
+            Some(r) => r,
+            None => crate::models::shipping_rates::find_rate_by_country(db, oc, country, state)
+                .await?
+                .unwrap_or(sea_orm::prelude::Decimal::ZERO),
+        };
+
+        if rate > max_rate {
+            max_rate = rate;
+            origin_desc = format!("{}, {}", os, oc);
+        }
+    }
+
+    Ok((max_rate, origin_desc))
 }
 
 #[utoipa::path(
@@ -247,6 +296,31 @@ pub(crate) async fn submit_checkout(
         total += subtotal;
     }
 
+    let dest_country = params.customer.country.as_deref().unwrap_or("");
+    let dest_state = params.customer.state.as_deref().unwrap_or("");
+
+    let (shipping_cost, _shipping_origin) = calc_shipping(&ctx.db, &db_products, dest_country, dest_state).await?;
+
+    // ponytail: local delivery override — all products ship from same country/state as destination
+    let all_local = db_products.iter().all(|p| {
+        p.warehouse_country.as_deref() == Some(dest_country)
+            && p.warehouse_state.as_deref() == Some(dest_state)
+    });
+    let shipping_cost = if all_local && !dest_country.is_empty() {
+        let local_rate = crate::models::config_cache::get_cached_config(&ctx, "shipping_local_rate")
+            .await
+            .unwrap_or(None)
+            .and_then(|v| v.parse::<f64>().ok())
+            .map(sea_orm::prelude::Decimal::try_from)
+            .and_then(Result::ok)
+            .unwrap_or(sea_orm::prelude::Decimal::ZERO);
+        if local_rate > sea_orm::prelude::Decimal::ZERO { local_rate } else { shipping_cost }
+    } else {
+        shipping_cost
+    };
+
+    total += shipping_cost;
+
     let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
 
     let checkout_user = get_current_user(&ctx, headers.get("cookie").and_then(|h| h.to_str().ok()).map(|s| s.to_string())).await;
@@ -261,6 +335,9 @@ pub(crate) async fn submit_checkout(
         customer_street: Set(params.customer.street.clone()),
         customer_city: Set(params.customer.city.clone()),
         customer_zip: Set(params.customer.zip.clone()),
+        customer_country: Set(params.customer.country.clone()),
+        customer_state: Set(params.customer.state.clone()),
+        shipping_cost: Set(Some(shipping_cost)),
         total: Set(total),
         status: Set("pending".to_string()),
         ..Default::default()
@@ -305,6 +382,8 @@ pub(crate) async fn submit_checkout(
         if let Some(v) = &params.customer.street { if !v.is_empty() { active.street = Set(Some(v.clone())); } }
         if let Some(v) = &params.customer.city { if !v.is_empty() { active.city = Set(Some(v.clone())); } }
         if let Some(v) = &params.customer.zip { if !v.is_empty() { active.zip = Set(Some(v.clone())); } }
+        if let Some(v) = &params.customer.country { if !v.is_empty() { active.country = Set(Some(v.clone())); } }
+        if let Some(v) = &params.customer.state { if !v.is_empty() { active.state = Set(Some(v.clone())); } }
         active.update(&ctx.db).await.ok();
     }
 

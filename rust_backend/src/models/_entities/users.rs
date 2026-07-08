@@ -29,6 +29,8 @@ pub struct Model {
     pub street: Option<String>,
     pub city: Option<String>,
     pub zip: Option<String>,
+    pub country: Option<String>,
+    pub state: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

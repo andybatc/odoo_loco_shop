@@ -22,7 +22,7 @@ use loco_rs::prelude::*;
 use utoipa::OpenApi;
 use std::env;
 
-use crate::{controllers, models::_entities::users, middleware, tasks};
+use crate::{controllers, models::_entities::users, middleware, tasks, workers};
 
 pub struct App;
 #[async_trait]
@@ -66,6 +66,7 @@ impl Hooks for App {
             .add_route(controllers::shop::routes())
             .add_route(controllers::auth::routes())
             .add_route(controllers::admin::routes())
+            .add_route(controllers::shipping::routes())
     }
     async fn after_routes(router: Router, ctx: &AppContext) -> Result<Router> {
         let router = router;
@@ -163,6 +164,7 @@ impl Hooks for App {
         tasks.register(tasks::sync::Sync);
         tasks.register(tasks::promote_user::PromoteUser);
         tasks.register(tasks::cleanup_carts::CleanupCarts);
+        tasks.register(workers::shipping_sync::ShippingSyncWorker);
         // tasks-inject (do not remove)
     }
     async fn truncate(ctx: &AppContext) -> Result<()> {

@@ -10,3 +10,4 @@ pub mod cart_items;
 pub mod carts;
 pub mod order_items;
 pub mod orders;
+pub mod shipping_rates;

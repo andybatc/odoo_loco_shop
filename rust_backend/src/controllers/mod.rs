@@ -9,3 +9,4 @@ pub mod carts;
 pub mod admin;
 pub mod checkout;
 pub mod payment_webhooks;
+pub mod shipping;

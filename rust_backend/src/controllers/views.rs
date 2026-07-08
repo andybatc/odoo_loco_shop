@@ -138,6 +138,8 @@ pub struct ProfileForm {
     pub street: Option<String>,
     pub city: Option<String>,
     pub zip: Option<String>,
+    pub country: Option<String>,
+    pub state: Option<String>,
 }
 
 pub async fn profile_page(
@@ -205,6 +207,8 @@ pub async fn update_profile(
     active.street = Set(form.street);
     active.city = Set(form.city);
     active.zip = Set(form.zip);
+    active.country = Set(form.country);
+    active.state = Set(form.state);
     active.update(&ctx.db).await.map_err(|e| {
         tracing::error!("Error actualizando perfil: {:?}", e);
         Error::string("Error al guardar los datos del perfil")
@@ -231,6 +235,8 @@ pub async fn update_profile(
 pub struct ConfigUpdateForm {
     pub token: Option<String>,
     pub odoo_url: Option<String>,
+    pub shipping_default_rate: Option<String>,
+    pub shipping_local_rate: Option<String>,
 }
 
 pub async fn config_page(
@@ -254,6 +260,22 @@ pub async fn config_page(
             Error::string("Error al conectar con la base de datos")
         })?
         .unwrap_or_else(|| "http://localhost:8072".to_string());
+
+    let shipping_default_rate = config_cache::get_cached_config(&ctx, "shipping_default_rate")
+        .await
+        .map_err(|e| {
+            tracing::error!("Error consultando cache: {:?}", e);
+            Error::string("Error al conectar con la base de datos")
+        })?
+        .unwrap_or_else(|| "10.00".to_string());
+
+    let shipping_local_rate = config_cache::get_cached_config(&ctx, "shipping_local_rate")
+        .await
+        .map_err(|e| {
+            tracing::error!("Error consultando cache: {:?}", e);
+            Error::string("Error al conectar con la base de datos")
+        })?
+        .unwrap_or_else(|| "0.00".to_string());
 
     let cookie_header = headers
         .get("cookie")
@@ -286,6 +308,8 @@ pub async fn config_page(
             "current_user": user,
             "current_token": token_value,
             "odoo_base_url": odoo_url_value,
+            "shipping_default_rate": shipping_default_rate,
+            "shipping_local_rate": shipping_local_rate,
             "csrf_token": csrf_token,
         }),
     )?;
@@ -360,6 +384,14 @@ async fn handle_config_update(
         return Err(Error::BadRequest("CSRF token inválido".to_string()));
     }
 
+    let cookie_header = headers
+        .get("cookie")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let user = get_current_user(&ctx, cookie_header).await;
+    if user.as_ref().map_or(true, |u| u.role != "admin") {
+        return Err(Error::Unauthorized("Acceso denegado".to_string()));
+    }
+
     let payload = const_form.0;
     let url_re = Regex::new(r"^https?://[a-zA-Z0-9][-a-zA-Z0-9.]*[a-zA-Z0-9](:[0-9]+)?(/.*)?$").unwrap();
 
@@ -414,6 +446,54 @@ async fn handle_config_update(
                 .await?;
             }
             config_cache::invalidate_config_cache(&ctx, "odoo_base_url").await;
+        }
+    }
+
+    if let Some(ref rate) = payload.shipping_default_rate {
+        if !rate.is_empty() {
+            let config = configs::Entity::find()
+                .filter(configs::Column::Key.eq("shipping_default_rate"))
+                .one(&ctx.db)
+                .await?;
+
+            if let Some(c) = config {
+                let mut active_model: configs::ActiveModel = c.into();
+                active_model.value = Set(Some(rate.clone()));
+                active_model.update(&ctx.db).await?;
+            } else {
+                configs::ActiveModel {
+                    key: Set(Some("shipping_default_rate".to_string())),
+                    value: Set(Some(rate.clone())),
+                    ..Default::default()
+                }
+                .insert(&ctx.db)
+                .await?;
+            }
+            config_cache::invalidate_config_cache(&ctx, "shipping_default_rate").await;
+        }
+    }
+
+    if let Some(ref rate) = payload.shipping_local_rate {
+        if !rate.is_empty() {
+            let config = configs::Entity::find()
+                .filter(configs::Column::Key.eq("shipping_local_rate"))
+                .one(&ctx.db)
+                .await?;
+
+            if let Some(c) = config {
+                let mut active_model: configs::ActiveModel = c.into();
+                active_model.value = Set(Some(rate.clone()));
+                active_model.update(&ctx.db).await?;
+            } else {
+                configs::ActiveModel {
+                    key: Set(Some("shipping_local_rate".to_string())),
+                    value: Set(Some(rate.clone())),
+                    ..Default::default()
+                }
+                .insert(&ctx.db)
+                .await?;
+            }
+            config_cache::invalidate_config_cache(&ctx, "shipping_local_rate").await;
         }
     }
 
