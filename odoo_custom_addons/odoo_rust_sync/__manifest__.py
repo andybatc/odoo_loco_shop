@@ -23,7 +23,7 @@ Long description of module's purpose
     # always loaded
     'data': [
         'data/ir_config_parameter_data.xml',
-        # 'security/ir.model.access.csv',
+        'security/ir.model.access.csv',
         'views/product_webhook_actions.xml',
         'views/shop_sync_views.xml',
         #'views/templates.xml',
