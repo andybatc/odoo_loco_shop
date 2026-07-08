@@ -13,6 +13,8 @@ const app = Vue.createApp({
             items: parseJsonScript('checkout-items') || [],
             totalGeneral: parseFloat(el?.getAttribute('data-total') || '0'),
             paymentMethods: parseJsonScript('checkout-payment-methods') || [],
+            shippingCost: null,
+            shippingOrigin: '',
             selectedPaymentId: null,
             customer: {
                 name: userData.name || '',
