@@ -21,6 +21,10 @@ pub struct Model {
     pub is_published: bool,
     pub category: Option<String>,
     pub tax_percent: Option<Decimal>,
+    pub warehouse_country: Option<String>,
+    pub warehouse_state: Option<String>,
+    pub warehouse_lat: Option<f64>,
+    pub warehouse_lng: Option<f64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]

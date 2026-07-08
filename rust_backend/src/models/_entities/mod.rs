@@ -9,4 +9,5 @@ pub mod order_items;
 pub mod orders;
 pub mod payment_methods;
 pub mod products;
+pub mod shipping_rates;
 pub mod users;

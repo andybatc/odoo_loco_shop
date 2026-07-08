@@ -19,6 +19,9 @@ pub struct Model {
     pub status: String,
     pub created_at: DateTimeWithTimeZone,
     pub updated_at: DateTimeWithTimeZone,
+    pub shipping_cost: Option<Decimal>,
+    pub customer_country: Option<String>,
+    pub customer_state: Option<String>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveRelation)]
