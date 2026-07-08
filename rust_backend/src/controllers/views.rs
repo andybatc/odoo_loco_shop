@@ -384,6 +384,14 @@ async fn handle_config_update(
         return Err(Error::BadRequest("CSRF token inválido".to_string()));
     }
 
+    let cookie_header = headers
+        .get("cookie")
+        .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
+    let user = get_current_user(&ctx, cookie_header).await;
+    if user.as_ref().map_or(true, |u| u.role != "admin") {
+        return Err(Error::Unauthorized("Acceso denegado".to_string()));
+    }
+
     let payload = const_form.0;
     let url_re = Regex::new(r"^https?://[a-zA-Z0-9][-a-zA-Z0-9.]*[a-zA-Z0-9](:[0-9]+)?(/.*)?$").unwrap();
 
