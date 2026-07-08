@@ -9,6 +9,11 @@ _logger = logging.getLogger(__name__)
 class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
+    warehouse_country_id = fields.Many2one("res.country", string="País del almacén")
+    warehouse_state_id = fields.Many2one("res.country.state", string="Estado del almacén")
+    warehouse_latitude = fields.Float(string="Latitud del almacén", digits=(9, 6))
+    warehouse_longitude = fields.Float(string="Longitud del almacén", digits=(9, 6))
+
     @api.model_create_multi
     def create(self, vals_list):
         """ Se ejecuta al crear nuevos productos """
