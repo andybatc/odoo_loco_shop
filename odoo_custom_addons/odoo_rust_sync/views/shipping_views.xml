@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+
+        <!-- Shipping Rate tree view -->
+        <record id="view_shipping_rate_tree" model="ir.ui.view">
+            <field name="name">shipping.rate.tree</field>
+            <field name="model">shipping.rate</field>
+            <field name="arch" type="xml">
+                <tree editable="bottom">
+                    <field name="origin_country_id" optional="show"/>
+                    <field name="origin_state_id"/>
+                    <field name="dest_country_id" optional="show"/>
+                    <field name="dest_state_id"/>
+                    <field name="amount"/>
+                </tree>
+            </field>
+        </record>
+
+        <!-- Shipping Rate form view -->
+        <record id="view_shipping_rate_form" model="ir.ui.view">
+            <field name="name">shipping.rate.form</field>
+            <field name="model">shipping.rate</field>
+            <field name="arch" type="xml">
+                <form>
+                    <sheet>
+                        <group>
+                            <group string="Origen">
+                                <field name="origin_country_id"/>
+                                <field name="origin_state_id"/>
+                            </group>
+                            <group string="Destino">
+                                <field name="dest_country_id"/>
+                                <field name="dest_state_id"/>
+                            </group>
+                        </group>
+                        <group>
+                            <field name="amount"/>
+                        </group>
+                    </sheet>
+                </form>
+            </field>
+        </record>
+
+        <!-- Action for shipping rates -->
+        <record id="action_shipping_rate" model="ir.actions.act_window">
+            <field name="name">Shipping Rates</field>
+            <field name="res_model">shipping.rate</field>
+            <field name="view_mode">tree,form</field>
+            <field name="help">Configure shipping rates by origin/destination state pairs.</field>
+        </record>
+
+        <!-- Menu entry under Sales -->
+        <menuitem id="menu_shipping_rate"
+                  name="Shipping Rates"
+                  parent="sale.menu_sale_config"
+                  action="action_shipping_rate"
+                  sequence="50"/>
+
+        <!-- Product template form extension: warehouse fields -->
+        <record id="view_product_template_warehouse_form" model="ir.ui.view">
+            <field name="name">product.template.warehouse.form</field>
+            <field name="model">product.template</field>
+            <field name="inherit_id" ref="product.product_template_form_view"/>
+            <field name="arch" type="xml">
+                <xpath expr="//notebook" position="inside">
+                    <page string="Warehouse" name="warehouse">
+                        <group>
+                            <group string="Ubicación del almacén">
+                                <field name="warehouse_country_id"/>
+                                <field name="warehouse_state_id"/>
+                            </group>
+                            <group string="Coordenadas">
+                                <field name="warehouse_latitude"/>
+                                <field name="warehouse_longitude"/>
+                            </group>
+                        </group>
+                    </page>
+                </xpath>
+            </field>
+        </record>
+
+    </data>
+</odoo>

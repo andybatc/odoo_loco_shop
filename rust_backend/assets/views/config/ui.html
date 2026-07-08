@@ -45,6 +45,62 @@
 
         <hr class="border-gray-200">
 
+        <!-- Sección: Shipping Default Rate -->
+        <div class="bg-yellow-50 rounded-md p-4">
+            <h3 class="text-sm font-medium text-yellow-800">Tarifa de Envío por Defecto</h3>
+            <div class="mt-2 text-sm text-yellow-700 font-mono break-all bg-white p-2 rounded border border-yellow-200">
+                {{ shipping_default_rate }}
+            </div>
+        </div>
+
+        <form hx-post="/ui/auth/config" hx-target="#msg-shipping-default" class="space-y-4">
+            <div>
+                <label for="shipping_default_rate" class="block text-sm font-medium text-gray-700">Nueva tarifa por defecto</label>
+                <p class="text-xs text-gray-500">Usada cuando no hay rate configurado para una ruta</p>
+                <div class="mt-1">
+                    <input id="shipping_default_rate" name="shipping_default_rate" type="text" value="{{ shipping_default_rate }}"
+                           class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-yellow-500 focus:border-yellow-500 sm:text-sm">
+                </div>
+            </div>
+            <div>
+                <button type="submit"
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-yellow-600 hover:bg-yellow-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-yellow-500">
+                    Actualizar Tarifa por Defecto
+                </button>
+            </div>
+            <div id="msg-shipping-default" class="text-center text-sm"></div>
+        </form>
+
+        <hr class="border-gray-200">
+
+        <!-- Sección: Shipping Local Rate -->
+        <div class="bg-purple-50 rounded-md p-4">
+            <h3 class="text-sm font-medium text-purple-800">Tarifa de Envío Local</h3>
+            <div class="mt-2 text-sm text-purple-700 font-mono break-all bg-white p-2 rounded border border-purple-200">
+                {{ shipping_local_rate }}
+            </div>
+        </div>
+
+        <form hx-post="/ui/auth/config" hx-target="#msg-shipping-local" class="space-y-4">
+            <div>
+                <label for="shipping_local_rate" class="block text-sm font-medium text-gray-700">Nueva tarifa local</label>
+                <p class="text-xs text-gray-500">Usada cuando todos los productos se envían desde el mismo país/estado que el destino</p>
+                <div class="mt-1">
+                    <input id="shipping_local_rate" name="shipping_local_rate" type="text" value="{{ shipping_local_rate }}"
+                           class="appearance-none block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm placeholder-gray-400 focus:outline-none focus:ring-purple-500 focus:border-purple-500 sm:text-sm">
+                </div>
+            </div>
+            <div>
+                <button type="submit"
+                        class="w-full flex justify-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500">
+                    Actualizar Tarifa Local
+                </button>
+            </div>
+            <div id="msg-shipping-local" class="text-center text-sm"></div>
+        </form>
+
+        <hr class="border-gray-200">
+
         <!-- Sección: URL de Odoo -->
         <div class="bg-green-50 rounded-md p-4">
             <h3 class="text-sm font-medium text-green-800">URL del Servidor Odoo</h3>
