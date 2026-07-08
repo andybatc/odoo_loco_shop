@@ -138,6 +138,8 @@ pub struct ProfileForm {
     pub street: Option<String>,
     pub city: Option<String>,
     pub zip: Option<String>,
+    pub country: Option<String>,
+    pub state: Option<String>,
 }
 
 pub async fn profile_page(
@@ -205,6 +207,8 @@ pub async fn update_profile(
     active.street = Set(form.street);
     active.city = Set(form.city);
     active.zip = Set(form.zip);
+    active.country = Set(form.country);
+    active.state = Set(form.state);
     active.update(&ctx.db).await.map_err(|e| {
         tracing::error!("Error actualizando perfil: {:?}", e);
         Error::string("Error al guardar los datos del perfil")

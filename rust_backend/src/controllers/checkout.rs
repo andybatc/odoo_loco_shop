@@ -28,6 +28,8 @@ pub struct CustomerInfo {
     pub street: Option<String>,
     pub city: Option<String>,
     pub zip: Option<String>,
+    pub country: Option<String>,
+    pub state: Option<String>,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -112,6 +114,8 @@ pub async fn checkout_page(
         "street": u.street,
         "city": u.city,
         "zip": u.zip,
+        "country": u.country,
+        "state": u.state,
     }));
     tracing::debug!("checkout_page: user={:?}, user_data={:?}", user.as_ref().map(|u| u.email.as_str()), user_data);
 
@@ -261,6 +265,8 @@ pub(crate) async fn submit_checkout(
         customer_street: Set(params.customer.street.clone()),
         customer_city: Set(params.customer.city.clone()),
         customer_zip: Set(params.customer.zip.clone()),
+        customer_country: Set(params.customer.country.clone()),
+        customer_state: Set(params.customer.state.clone()),
         total: Set(total),
         status: Set("pending".to_string()),
         ..Default::default()
@@ -305,6 +311,8 @@ pub(crate) async fn submit_checkout(
         if let Some(v) = &params.customer.street { if !v.is_empty() { active.street = Set(Some(v.clone())); } }
         if let Some(v) = &params.customer.city { if !v.is_empty() { active.city = Set(Some(v.clone())); } }
         if let Some(v) = &params.customer.zip { if !v.is_empty() { active.zip = Set(Some(v.clone())); } }
+        if let Some(v) = &params.customer.country { if !v.is_empty() { active.country = Set(Some(v.clone())); } }
+        if let Some(v) = &params.customer.state { if !v.is_empty() { active.state = Set(Some(v.clone())); } }
         active.update(&ctx.db).await.ok();
     }
 

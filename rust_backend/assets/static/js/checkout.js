@@ -21,6 +21,8 @@ const app = Vue.createApp({
                 street: userData.street || '',
                 city: userData.city || '',
                 zip: userData.zip || '',
+                country: userData.country || '',
+                state: userData.state || '',
             },
             userData: Object.keys(userData).length > 0 ? userData : null,
             submitting: false,
