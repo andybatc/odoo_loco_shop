@@ -156,6 +156,7 @@ impl Hooks for App {
         queue.register(crate::workers::webhook::WebhookWorker::build(ctx)).await?;
         queue.register(crate::workers::product_sync::Worker::build(ctx)).await?;
         queue.register(crate::workers::order_creation::OrderCreationWorker::build(ctx)).await?;
+        queue.register(crate::workers::shipping_rate_sync::ShippingRateSyncWorker::build(ctx)).await?;
         Ok(())
     }
 
