@@ -6,14 +6,17 @@
         <record id="view_shipping_rate_tree" model="ir.ui.view">
             <field name="name">shipping.rate.tree</field>
             <field name="model">shipping.rate</field>
+            <field name="type">list</field>
             <field name="arch" type="xml">
-                <tree editable="bottom">
+                <list editable="bottom">
                     <field name="origin_country_id" optional="show"/>
-                    <field name="origin_state_id"/>
+                    <field name="origin_state_id"
+                           domain="[('country_id','=',origin_country_id)]"/>
                     <field name="dest_country_id" optional="show"/>
-                    <field name="dest_state_id"/>
+                    <field name="dest_state_id"
+                           domain="[('country_id','=',dest_country_id)]"/>
                     <field name="amount"/>
-                </tree>
+                </list>
             </field>
         </record>
 
@@ -21,17 +24,20 @@
         <record id="view_shipping_rate_form" model="ir.ui.view">
             <field name="name">shipping.rate.form</field>
             <field name="model">shipping.rate</field>
+            <field name="type">form</field>
             <field name="arch" type="xml">
                 <form>
                     <sheet>
                         <group>
                             <group string="Origen">
                                 <field name="origin_country_id"/>
-                                <field name="origin_state_id"/>
+                                <field name="origin_state_id"
+                                       domain="[('country_id','=',origin_country_id)]"/>
                             </group>
                             <group string="Destino">
                                 <field name="dest_country_id"/>
-                                <field name="dest_state_id"/>
+                                <field name="dest_state_id"
+                                       domain="[('country_id','=',dest_country_id)]"/>
                             </group>
                         </group>
                         <group>
@@ -46,7 +52,7 @@
         <record id="action_shipping_rate" model="ir.actions.act_window">
             <field name="name">Shipping Rates</field>
             <field name="res_model">shipping.rate</field>
-            <field name="view_mode">tree,form</field>
+            <field name="view_mode">list,form</field>
             <field name="help">Configure shipping rates by origin/destination state pairs.</field>
         </record>
 
@@ -68,16 +74,31 @@
                         <group>
                             <group string="Ubicación del almacén">
                                 <field name="warehouse_country_id"/>
-                                <field name="warehouse_state_id"/>
+                                <field name="warehouse_state_id"
+                                       domain="[('country_id','=',warehouse_country_id)]"/>
                             </group>
                             <group string="Coordenadas">
                                 <field name="warehouse_latitude"/>
                                 <field name="warehouse_longitude"/>
+                                <button name="action_open_google_maps"
+                                        type="object"
+                                        string="Abrir en Google Maps"
+                                        class="btn-secondary"
+                                        icon="fa-globe"/>
                             </group>
                         </group>
                     </page>
                 </xpath>
             </field>
+        </record>
+
+        <!-- Server action: sync selected rates to Rust shop -->
+        <record id="action_sync_shipping_rates" model="ir.actions.server">
+            <field name="name">Sincronizar con la tienda</field>
+            <field name="model_id" ref="model_shipping_rate"/>
+            <field name="binding_model_id" ref="model_shipping_rate"/>
+            <field name="state">code</field>
+            <field name="code">records._sync_to_shop()</field>
         </record>
 
     </data>
