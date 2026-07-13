@@ -32,7 +32,7 @@ impl task::Task for ShippingSyncWorker {
         let warehouses = odoo_db
             .query_all(Statement::from_string(
                 backend,
-                "SELECT pt.id, rc.name AS country, rcs.name AS state, pt.warehouse_latitude, pt.warehouse_longitude
+                "SELECT pt.id, rc.name->>'en_US' AS country, rcs.name AS state, pt.warehouse_latitude, pt.warehouse_longitude
                  FROM product_template pt
                  LEFT JOIN res_country rc ON pt.warehouse_country_id = rc.id
                  LEFT JOIN res_country_state rcs ON pt.warehouse_state_id = rcs.id
@@ -68,8 +68,8 @@ impl task::Task for ShippingSyncWorker {
         let rate_rows = odoo_db
             .query_all(Statement::from_string(
                 backend,
-                "SELECT rc_o.name AS origin_country, rcs_o.name AS origin_state,
-                        rc_d.name AS dest_country, rcs_d.name AS dest_state,
+                "SELECT rc_o.name->>'en_US' AS origin_country, rcs_o.name AS origin_state,
+                        rc_d.name->>'en_US' AS dest_country, rcs_d.name AS dest_state,
                         sr.amount
                  FROM shipping_rate sr
                  JOIN res_country rc_o ON sr.origin_country_id = rc_o.id
