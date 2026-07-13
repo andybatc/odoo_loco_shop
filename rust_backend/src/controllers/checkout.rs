@@ -15,8 +15,9 @@ use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use loco_rs::prelude::*;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Statement};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::time::Duration;
 use utoipa::ToSchema;
 
@@ -45,6 +46,51 @@ pub struct CheckoutResponse {
     pub invoice_name: Option<String>,
     pub total: Option<f64>,
     pub error: Option<String>,
+}
+
+/// Fetch countries + states directly from Odoo DB (mirrors Odoo's own dropdowns).
+pub async fn get_countries_with_states(ctx: &AppContext) -> BTreeMap<String, Vec<String>> {
+    // ponytail: cache in Redis for 10min so we don't hit Odoo DB on every checkout load
+    let cache_key = "checkout:countries";
+    if let Ok(Some(cached)) = ctx.cache.get::<BTreeMap<String, Vec<String>>>(cache_key).await {
+        return cached;
+    }
+
+    let mut map: BTreeMap<String, Vec<String>> = BTreeMap::new();
+
+    let odoo_uri = crate::models::_entities::configs::Entity::find()
+        .filter(crate::models::_entities::configs::Column::Key.eq("odoo_db_uri"))
+        .one(&ctx.db)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|c| c.value)
+        .unwrap_or_else(|| "postgres://odoo:postgres@localhost:5432/odoo_prod".to_string());
+
+    if let Ok(odoo_db) = sea_orm::Database::connect(&odoo_uri).await {
+        let backend = odoo_db.get_database_backend();
+        if let Ok(rows) = odoo_db
+            .query_all(sea_orm::Statement::from_string(
+                backend,
+                "SELECT rc.name->>'en_US' AS country, rcs.name AS state
+                 FROM res_country rc
+                 JOIN res_country_state rcs ON rcs.country_id = rc.id
+                 ORDER BY rc.name->>'en_US', rcs.name".to_string(),
+            ))
+            .await
+        {
+            for row in &rows {
+                let country: Option<String> = row.try_get_by_index(0).ok();
+                let state: Option<String> = row.try_get_by_index(1).ok();
+                if let (Some(c), Some(s)) = (country, state) {
+                    map.entry(c).or_default().push(s);
+                }
+            }
+        }
+    }
+
+    let _ = ctx.cache.insert_with_expiry(cache_key, &map, std::time::Duration::from_secs(600)).await;
+    map
 }
 
 pub async fn checkout_page(
@@ -119,9 +165,11 @@ pub async fn checkout_page(
     }));
     tracing::debug!("checkout_page: user={:?}, user_data={:?}", user.as_ref().map(|u| u.email.as_str()), user_data);
 
-    // ponytail: pass rates for client-side estimation display
+    // ponytail: pass rates + countries for client-side estimation and dropdowns
     let shipping_rates_list = shipping_rates::Entity::find().all(&ctx.db).await.unwrap_or_default();
     let shipping_rates_json = serde_json::to_value(&shipping_rates_list).unwrap_or_default();
+
+    let countries = get_countries_with_states(&ctx).await;
 
     format::render().view(
         &v,
@@ -133,6 +181,7 @@ pub async fn checkout_page(
             "user_data": user_data,
             "payment_methods": payment_methods,
             "shipping_rates": shipping_rates_json,
+            "countries": countries,
         }),
     )
 }
