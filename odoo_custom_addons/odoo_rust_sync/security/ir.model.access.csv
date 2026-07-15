@@ -1,3 +1,2 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
-access_odoo_rust_sync_odoo_rust_sync,odoo_rust_sync.odoo_rust_sync,model_odoo_rust_sync_odoo_rust_sync,base.group_user,1,1,1,1
 access_shipping_rate_user,shipping.rate.user,model_shipping_rate,base.group_user,1,1,1,1

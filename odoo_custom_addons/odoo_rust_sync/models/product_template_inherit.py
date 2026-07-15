@@ -14,6 +14,24 @@ class ProductTemplate(models.Model):
     warehouse_latitude = fields.Float(string="Latitud del almacén", digits=(9, 6))
     warehouse_longitude = fields.Float(string="Longitud del almacén", digits=(9, 6))
 
+    @api.onchange('warehouse_country_id', 'warehouse_state_id')
+    def _onchange_warehouse_location(self):
+        if self.warehouse_country_id and self.warehouse_state_id:
+            try:
+                q = f"{self.warehouse_state_id.name}, {self.warehouse_country_id.name}"
+                resp = requests.get(
+                    "https://nominatim.openstreetmap.org/search",
+                    params={"q": q, "format": "json", "limit": 1},
+                    headers={"User-Agent": "Odoo/odoo_rust_sync/1.0"},
+                    timeout=3,
+                )
+                data = resp.json()
+                if data:
+                    self.warehouse_latitude = float(data[0]["lat"])
+                    self.warehouse_longitude = float(data[0]["lon"])
+            except Exception:
+                pass  # falla silencioso, coordenadas se quedan vacías
+
     @api.model_create_multi
     def create(self, vals_list):
         """ Se ejecuta al crear nuevos productos """
@@ -92,8 +110,38 @@ class ProductTemplate(models.Model):
 
         self.env.cr.postcommit.add(send_after_commit)
 
+    def action_open_google_maps(self):
+        self.ensure_one()
+        parts = []
+        if self.warehouse_country_id:
+            parts.append(self.warehouse_country_id.name)
+        if self.warehouse_state_id:
+            parts.append(self.warehouse_state_id.name)
+        if not parts:
+            raise UserError("Selecciona un país o estado primero para abrir el mapa.")
+
+        url = f"https://www.google.com/maps/search/{'+'.join(parts)}"
+        return {
+            'type': 'ir.actions.act_url',
+            'url': url,
+            'target': 'new',
+        }
+
+    def _to_bulk_payload(self):
+        """ Payload ligero para sincronización masiva (sin imagen) """
+        name_field = self.name
+        product_name = name_field.get('es_ES') or name_field.get('en_US') or list(name_field.values())[0] if isinstance(
+            name_field, dict) else name_field
+        return {
+            "odoo_id": self.id,
+            "name": product_name or "Sin nombre",
+            "price": float(self.list_price),
+            "is_published": self.is_published,
+            "warehouse_country": self.warehouse_country_id.name if self.warehouse_country_id else None,
+            "warehouse_state": self.warehouse_state_id.name if self.warehouse_state_id else None,
+        }
+
     def action_bulk_sync_to_rust(self):
-        """ Envía en lote los productos seleccionados al backend de Rust """
         token = self.env['ir.config_parameter'].sudo().get_param('rust_api.webhook_token')
         if not token:
             raise UserError("⚠️ El token 'rust_api.webhook_token' no está configurado en los Parámetros del Sistema.")
@@ -101,8 +149,7 @@ class ProductTemplate(models.Model):
         base_url = self._get_rust_base_url()
         url = f"{base_url}/api/webhooks/odoo/bulk-update"
 
-        # 'self' aquí ya contiene automáticamente todos los registros seleccionados en la lista
-        batch_products = [rec._to_rust_payload() for rec in self]
+        batch_products = [rec._to_bulk_payload() for rec in self]
 
         headers = {
             "Authorization": f"Bearer {token}",
