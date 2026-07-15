@@ -117,14 +117,14 @@
 
             <span class="h-5 w-[1px] bg-gray-700"></span>
             {% if current_user %}
-            <div class="group relative flex items-center">
-                <button class="text-gray-300 hover:text-white transition">
+            <div class="relative flex items-center">
+                <button id="profile-btn" class="text-gray-300 hover:text-white transition cursor-pointer">
                     <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                               d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"></path>
                     </svg>
                 </button>
-                <div class="absolute right-0 top-full mt-2 w-44 bg-gray-800 text-white text-sm rounded-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition z-50 shadow-xl overflow-hidden">
+                <div id="profile-menu" class="absolute right-0 top-full mt-2 w-44 bg-gray-800 text-white text-sm rounded-lg opacity-0 invisible transition z-50 shadow-xl overflow-hidden">
                     <div class="px-4 py-3 border-b border-gray-700 text-xs text-gray-300">
                         Hola, <span class="font-bold text-white">{{ current_user.name }}</span>
                     </div>
@@ -190,6 +190,28 @@ function showToast(msg) {
     t.classList.remove('opacity-0', 'translate-y-2');
     setTimeout(() => t.classList.add('opacity-0', 'translate-y-2'), 2500);
 }
+(function(){
+    const btn = document.getElementById('profile-btn');
+    const menu = document.getElementById('profile-menu');
+    if (!btn || !menu) return;
+    let hideTimer;
+    function open() { clearTimeout(hideTimer); menu.classList.remove('opacity-0','invisible'); }
+    function closeDelayed() { hideTimer = setTimeout(() => menu.classList.add('opacity-0','invisible'), 200); }
+    function closeNow() { clearTimeout(hideTimer); menu.classList.add('opacity-0','invisible'); }
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (menu.classList.contains('opacity-0')) open();
+        else closeNow();
+    });
+    btn.addEventListener('mouseenter', open);
+    btn.addEventListener('mouseleave', closeDelayed);
+    menu.addEventListener('mouseenter', open);
+    menu.addEventListener('mouseleave', closeDelayed);
+    menu.querySelectorAll('a').forEach(a => a.addEventListener('click', closeNow));
+    document.addEventListener('click', (e) => {
+        if (!btn.contains(e.target) && !menu.contains(e.target)) closeNow();
+    });
+})();
 </script>
 
 </body>
