@@ -13,6 +13,7 @@ pub struct CartItemRender {
     pub quantity: i32,
     pub subtotal: f64,
     pub image_filename: Option<String>,
+    pub tax_percent: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -61,6 +62,7 @@ pub async fn load_cart(ctx: &AppContext, cart_uuid: Uuid) -> Result<CartWithTota
             quantity: qty,
             subtotal,
             image_filename: prod.image_filename,
+            tax_percent: prod.tax_percent.map(|t| t.to_string()),
         });
     }
 

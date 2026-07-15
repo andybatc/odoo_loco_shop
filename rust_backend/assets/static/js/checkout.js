@@ -13,6 +13,7 @@ const app = Vue.createApp({
             items: parseJsonScript('checkout-items') || [],
             totalGeneral: parseFloat(el?.getAttribute('data-total') || '0'),
             paymentMethods: parseJsonScript('checkout-payment-methods') || [],
+            countries: parseJsonScript('checkout-countries') || {},
             shippingCost: null,
             shippingOrigin: '',
             selectedPaymentId: null,
@@ -31,7 +32,46 @@ const app = Vue.createApp({
             errorMessage: '',
         };
     },
+    computed: {
+        productIds() {
+            return this.items.map(i => i.id).join(',');
+        },
+        totalWithShipping() {
+            if (this.noShipping) return this.totalGeneral.toFixed(2);
+            const base = this.totalGeneral;
+            const ship = this.shippingCost !== null ? parseFloat(this.shippingCost) : 0;
+            return (base + ship).toFixed(2);
+        },
+        noShipping() {
+            return this.shippingCost === 0 && (!this.shippingOrigin || this.shippingOrigin.includes('Sin origen'));
+        },
+    },
+    watch: {
+        'customer.country': function (newVal, oldVal) {
+            if (newVal !== oldVal) this.customer.state = '';
+            this.estimateShipping();
+        },
+        'customer.state': function () { this.estimateShipping(); },
+    },
     methods: {
+        async estimateShipping() {
+            const country = this.customer.country;
+            const state = this.customer.state;
+            if (!country || !state || !this.productIds) {
+                this.shippingCost = null;
+                this.shippingOrigin = '';
+                return;
+            }
+            try {
+                const resp = await fetch(`/api/shipping/estimate?product_ids=${this.productIds}&country=${encodeURIComponent(country)}&state=${encodeURIComponent(state)}`);
+                const data = await resp.json();
+                this.shippingCost = parseFloat(data.shipping_cost) || 0;
+                this.shippingOrigin = data.origin_summary || '';
+            } catch {
+                this.shippingCost = null;
+                this.shippingOrigin = '';
+            }
+        },
         async submitOrder() {
             this.submitting = true;
             this.errorMessage = '';
