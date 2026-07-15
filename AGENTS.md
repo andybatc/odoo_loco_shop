@@ -17,6 +17,24 @@
 - **Run**: `./odoo-bin -c odoo_prod.conf` (desde la raíz de Odoo, con venv activado)
 - **prometheus-client** ya instalado en el venv
 
+## Running
+
+### Start backend (with queue worker)
+
+Loco `start` por defecto corre en **ServerOnly** — los `BackgroundWorker` que usan Redis queue NO se ejecutan.
+
+```bash
+cd rust_backend && setsid -f bash -c 'exec target/debug/odoo_shop-cli start --server-and-worker' &>/tmp/rust_shop.log
+```
+
+La flag `--server-and-worker` spawnée 2 worker threads que procesan `queue:default` en Redis. Sin esta flag, `perform_later()` encola jobs en Redis pero nadie los procesa.
+
+### Start Odoo
+
+```bash
+cd ~/Odoo/odoo-18.0/odoo-18.0 && source "/home/andy/Entornos virtuales/odoo18/.venv/bin/activate" && ./odoo-bin -c odoo_prod.conf
+```
+
 ## Project structure
 
 ```

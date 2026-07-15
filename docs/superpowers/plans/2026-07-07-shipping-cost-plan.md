@@ -188,7 +188,53 @@ enum Users {
 }
 ```
 
-- [ ] **Step 4: Registrar migraciones en `lib.rs`**
+- [ ] **Step 4: Crear `m20260707_000004_add_shipping_to_orders.rs`**
+
+```rust
+use sea_orm_migration::prelude::*;
+
+#[derive(DeriveMigrationName)]
+pub struct Migration;
+
+#[async_trait::async_trait]
+impl MigrationTrait for Migration {
+    async fn up(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Orders::Table)
+                    .add_column_if_not_exists(ColumnDef::new(Orders::ShippingCost).decimal(12, 2).null())
+                    .add_column_if_not_exists(ColumnDef::new(Orders::CustomerCountry).string().null())
+                    .add_column_if_not_exists(ColumnDef::new(Orders::CustomerState).string().null())
+                    .to_owned(),
+            )
+            .await
+    }
+
+    async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
+        manager
+            .alter_table(
+                Table::alter()
+                    .table(Orders::Table)
+                    .drop_column(Orders::ShippingCost)
+                    .drop_column(Orders::CustomerCountry)
+                    .drop_column(Orders::CustomerState)
+                    .to_owned(),
+            )
+            .await
+    }
+}
+
+#[derive(Iden)]
+enum Orders {
+    Table,
+    ShippingCost,
+    CustomerCountry,
+    CustomerState,
+}
+```
+
+- [ ] **Step 5: Registrar migraciones en `lib.rs`**
 
 En `rust_backend/migration/src/lib.rs`, agregar al array `migrations![]`:
 
@@ -196,6 +242,7 @@ En `rust_backend/migration/src/lib.rs`, agregar al array `migrations![]`:
 mod m20260707_000001_add_warehouse_to_products;
 mod m20260707_000002_create_shipping_rates;
 mod m20260707_000003_add_country_state_to_users;
+mod m20260707_000004_add_shipping_to_orders;
 ```
 
 Y en la lista:
@@ -204,6 +251,7 @@ Y en la lista:
 m20260707_000001_add_warehouse_to_products::Migration,
 m20260707_000002_create_shipping_rates::Migration,
 m20260707_000003_add_country_state_to_users::Migration,
+m20260707_000004_add_shipping_to_orders::Migration,
 ```
 
 - [ ] **Step 5: Verificar que compilan**
@@ -313,7 +361,33 @@ En implementación de `Column` trait:
 pub mod shipping_rates;
 ```
 
-- [ ] **Step 5: Verificar compilación**
+- [ ] **Step 5: Agregar campos shipping a orders entity**
+
+En `rust_backend/src/models/_entities/orders.rs`, agregar:
+
+```rust
+    pub shipping_cost: Option<Decimal>,
+    pub customer_country: Option<String>,
+    pub customer_state: Option<String>,
+```
+
+En `Column` enum:
+
+```rust
+    ShippingCost,
+    CustomerCountry,
+    CustomerState,
+```
+
+En implementación de `Column` trait:
+
+```rust
+            Self::ShippingCost => ColumnType::Decimal(None),
+            Self::CustomerCountry => ColumnType::String(None),
+            Self::CustomerState => ColumnType::String(None),
+```
+
+- [ ] **Step 6: Verificar compilación**
 
 ```bash
 cd rust_backend
@@ -486,15 +560,14 @@ Asegurar que `depends` incluya `stock` (por el modelo `product.template` ya here
 
 ```rust
 use loco_rs::prelude::*;
-use sea_orm::{ConnectOptions, Database, EntityTrait, QueryFilter, ColumnTrait, Set};
+use sea_orm::{Database, EntityTrait, QueryFilter, ColumnTrait, Statement, ActiveValue};
 use crate::models::_entities::{products, shipping_rates};
 use crate::models::shipping_rates as shipping_model;
-use sea_orm::ActiveValue;
 
-pub struct ShippingSyncWorker;
+pub struct ShippingSync;
 
 #[async_trait]
-impl Task for ShippingSyncWorker {
+impl Task for ShippingSync {
     fn task(&self) -> TaskInfo {
         TaskInfo {
             name: "sync-shipping".to_string(),
@@ -503,40 +576,49 @@ impl Task for ShippingSyncWorker {
     }
 
     async fn run(&self, app_context: &AppContext, _vars: &TaskVars) -> Result<()> {
-        let db_uri = crate::models::config_cache::get_cached_config(app_context, "odoo_db_uri")
-            .await
+        let odoo_uri = crate::models::_entities::configs::Entity::find()
+            .filter(crate::models::_entities::configs::Column::Key.eq("odoo_db_uri"))
+            .one(&app_context.db)
+            .await?
+            .and_then(|c| c.value)
             .unwrap_or_else(|| "postgres://odoo:postgres@localhost:5432/odoo_prod".to_string());
 
-        let odoo_db = Database::connect(
-            ConnectOptions::new(db_uri).to_owned(),
-        )
-        .await
-        .map_err(|e| tracing::error!("Failed to connect to Odoo DB: {}", e))
-        .unwrap();
+        let odoo_db = Database::connect(&odoo_uri)
+            .await
+            .map_err(|e| Error::BadRequest(format!("Error conectando a Odoo: {e}")))?;
+
+        let backend = odoo_db.get_database_backend();
 
         // Sync warehouse locations
-        let warehouses = sqlx::query_as::<_, (i32, Option<String>, Option<String>, Option<f64>, Option<f64>)>(
-            "SELECT pt.id, rc.name AS country, rcs.name AS state, pt.warehouse_latitude, pt.warehouse_longitude
-             FROM product_template pt
-             LEFT JOIN res_country rc ON pt.warehouse_country_id = rc.id
-             LEFT JOIN res_country_state rcs ON pt.warehouse_state_id = rcs.id
-             WHERE pt.sale_ok = true AND pt.warehouse_country_id IS NOT NULL"
-        )
-        .fetch_all(&odoo_db)
-        .await
-        .unwrap_or_default();
+        let warehouses = odoo_db
+            .query_all(Statement::from_string(
+                backend,
+                "SELECT pt.id, rc.name AS country, rcs.name AS state, pt.warehouse_latitude, pt.warehouse_longitude
+                 FROM product_template pt
+                 LEFT JOIN res_country rc ON pt.warehouse_country_id = rc.id
+                 LEFT JOIN res_country_state rcs ON pt.warehouse_state_id = rcs.id
+                 WHERE pt.sale_ok = true AND pt.warehouse_country_id IS NOT NULL".to_string(),
+            ))
+            .await
+            .unwrap_or_default();
 
-        for (odoo_id, country, state, lat, lng) in &warehouses {
+        for row in &warehouses {
+            let odoo_id: i32 = row.try_get_by_index(0).unwrap_or(0);
+            let country: Option<String> = row.try_get_by_index(1).ok();
+            let state: Option<String> = row.try_get_by_index(2).ok();
+            let lat: Option<f64> = row.try_get_by_index(3).ok();
+            let lng: Option<f64> = row.try_get_by_index(4).ok();
+
             if let Some(product) = products::Entity::find()
-                .filter(products::Column::OdooId.eq(*odoo_id))
+                .filter(products::Column::OdooId.eq(odoo_id))
                 .one(&app_context.db)
                 .await?
             {
                 let mut active: products::ActiveModel = product.into();
-                active.warehouse_country = Set(country.clone());
-                active.warehouse_state = Set(state.clone());
-                active.warehouse_lat = Set(*lat);
-                active.warehouse_lng = Set(*lng);
+                active.warehouse_country = ActiveValue::Set(country);
+                active.warehouse_state = ActiveValue::Set(state);
+                active.warehouse_lat = ActiveValue::Set(lat);
+                active.warehouse_lng = ActiveValue::Set(lng);
                 active.update(&app_context.db).await?;
             }
         }
@@ -544,29 +626,37 @@ impl Task for ShippingSyncWorker {
         tracing::info!("Synced {} warehouse locations", warehouses.len());
 
         // Sync shipping rates
-        let rates = sqlx::query_as::<_, (String, String, String, String, f64)>(
-            "SELECT rc_o.name AS origin_country, rcs_o.name AS origin_state,
-                    rc_d.name AS dest_country, rcs_d.name AS dest_state,
-                    sr.amount
-             FROM shipping_rate sr
-             JOIN res_country rc_o ON sr.origin_country_id = rc_o.id
-             JOIN res_country_state rcs_o ON sr.origin_state_id = rcs_o.id
-             JOIN res_country rc_d ON sr.dest_country_id = rc_d.id
-             JOIN res_country_state rcs_d ON sr.dest_state_id = rcs_d.id"
-        )
-        .fetch_all(&odoo_db)
-        .await
-        .unwrap_or_default();
+        let rate_rows = odoo_db
+            .query_all(Statement::from_string(
+                backend,
+                "SELECT rc_o.name AS origin_country, rcs_o.name AS origin_state,
+                        rc_d.name AS dest_country, rcs_d.name AS dest_state,
+                        sr.amount
+                 FROM shipping_rate sr
+                 JOIN res_country rc_o ON sr.origin_country_id = rc_o.id
+                 JOIN res_country_state rcs_o ON sr.origin_state_id = rcs_o.id
+                 JOIN res_country rc_d ON sr.dest_country_id = rc_d.id
+                 JOIN res_country_state rcs_d ON sr.dest_state_id = rcs_d.id".to_string(),
+            ))
+            .await
+            .unwrap_or_default();
 
-        let models: Vec<shipping_rates::ActiveModel> = rates
-            .into_iter()
-            .map(|(oc, os, dc, ds, amt)| shipping_rates::ActiveModel {
-                origin_country: ActiveValue::Set(oc),
-                origin_state: ActiveValue::Set(os),
-                dest_country: ActiveValue::Set(dc),
-                dest_state: ActiveValue::Set(ds),
-                amount: ActiveValue::Set(Decimal::try_from(amt).unwrap_or(Decimal::ZERO)),
-                ..Default::default()
+        let models: Vec<shipping_rates::ActiveModel> = rate_rows
+            .iter()
+            .filter_map(|r| {
+                let origin_country: String = r.try_get_by_index(0).ok()?;
+                let origin_state: String = r.try_get_by_index(1).ok()?;
+                let dest_country: String = r.try_get_by_index(2).ok()?;
+                let dest_state: String = r.try_get_by_index(3).ok()?;
+                let amount_f64: f64 = r.try_get_by_index(4).ok()?;
+                Some(shipping_rates::ActiveModel {
+                    origin_country: ActiveValue::Set(origin_country),
+                    origin_state: ActiveValue::Set(origin_state),
+                    dest_country: ActiveValue::Set(dest_country),
+                    dest_state: ActiveValue::Set(dest_state),
+                    amount: ActiveValue::Set(Decimal::from_f64(amount_f64).unwrap_or(Decimal::ZERO)),
+                    ..Default::default()
+                })
             })
             .collect();
 
@@ -664,7 +754,24 @@ if let Some(state) = &params.state {
 </div>
 ```
 
-- [ ] **Step 4: Compilar y verificar**
+- [ ] **Step 4: Agregar country/state a `CustomerInfo` en `checkout.rs`**
+
+En la struct `CustomerInfo`:
+
+```rust
+pub struct CustomerInfo {
+    pub name: String,
+    pub email: String,
+    pub phone: Option<String>,
+    pub street: Option<String>,
+    pub city: Option<String>,
+    pub zip: Option<String>,
+    pub country: Option<String>,
+    pub state: Option<String>,
+}
+```
+
+- [ ] **Step 5: Compilar y verificar**
 
 ```bash
 cd rust_backend
@@ -712,16 +819,16 @@ json!({
 En `checkout.rs`, agregar función helper:
 
 ```rust
-async fn calc_shipping(
+pub(crate) async fn calc_shipping(
     db: &DatabaseConnection,
-    items: &[CartWithProduct],
+    items: &[products::Model],
     country: &str,
     state: &str,
 ) -> Result<(Decimal, String), DbErr> {
     // Agrupar productos por warehouse único
     let mut origins: Vec<(&str, &str)> = Vec::new();
-    for item in items {
-        if let (Some(c), Some(s)) = (&item.product.warehouse_country, &item.product.warehouse_state) {
+    for product in items {
+        if let (Some(c), Some(s)) = (&product.warehouse_country, &product.warehouse_state) {
             if !origins.iter().any(|(oc, os)| oc == c && os == s) {
                 origins.push((c, s));
             }
@@ -737,14 +844,15 @@ async fn calc_shipping(
 
     for (oc, os) in &origins {
         // Intentar rate exacto
-        let rate = shipping_rates::find_rate(db, oc, os, country, state).await?
-            .or_else(|| {
+        let rate = match shipping_rates::find_rate(db, oc, os, country, state).await? {
+            Some(r) => r,
+            None => {
                 // Fallback: mismo país, cualquier estado origen
-                futures::executor::block_on(
-                    shipping_rates::find_rate_by_country(db, oc, country, state)
-                ).ok().flatten()
-            })
-            .unwrap_or(Decimal::ZERO);
+                shipping_rates::find_rate_by_country(db, oc, country, state)
+                    .await?
+                    .unwrap_or(Decimal::ZERO)
+            }
+        };
 
         if rate > max_rate {
             max_rate = rate;
@@ -764,9 +872,11 @@ Después de validar items y antes de crear la orden:
 let dest_country = customer_country.as_deref().unwrap_or("");
 let dest_state = customer_state.as_deref().unwrap_or("");
 
+// Extraer solo los productos (sin cart_items) para calc_shipping
+let product_list: Vec<products::Model> = items.iter().map(|ci| ci.product.clone()).collect();
 let (shipping_cost, shipping_origin) = calc_shipping(
     &ctx.db,
-    &items,
+    &product_list,
     dest_country,
     dest_state,
 )
@@ -868,8 +978,6 @@ pub async fn estimate(
         .await
         .unwrap_or_default();
 
-    // Reuse calc_shipping logic — convert to CartWithProduct-like structure
-    // or extract the shipping calc to a shared function
     let (shipping_cost, origin_summary) = crate::controllers::checkout::calc_shipping(
         &ctx.db,
         &items,
