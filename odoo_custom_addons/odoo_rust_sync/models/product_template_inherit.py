@@ -63,6 +63,11 @@ class ProductTemplate(models.Model):
                 record._send_rust_webhook()
         return res
 
+    def _get_tax_percent(self):
+        """ Devuelve el porcentaje de impuesto del producto (primera tasa de venta) """
+        tax = self.taxes_id[:1]
+        return float(tax.amount) if tax else 0.0
+
     def _to_rust_payload(self):
         """ Devuelve el diccionario formateado listo para el webhook """
         name_field = self.name
@@ -73,7 +78,8 @@ class ProductTemplate(models.Model):
             "name": product_name or "Sin nombre",
             "price": float(self.list_price),
             "image_base64": self.image_1920.decode('utf-8') if self.image_1920 else None,
-            "is_published": self.is_published
+            "is_published": self.is_published,
+            "tax_percent": self._get_tax_percent(),
         }
 
     def _get_rust_base_url(self):
@@ -139,6 +145,7 @@ class ProductTemplate(models.Model):
             "is_published": self.is_published,
             "warehouse_country": self.warehouse_country_id.name if self.warehouse_country_id else None,
             "warehouse_state": self.warehouse_state_id.name if self.warehouse_state_id else None,
+            "tax_percent": self._get_tax_percent(),
         }
 
     def action_bulk_sync_to_rust(self):

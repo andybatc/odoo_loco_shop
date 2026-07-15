@@ -18,6 +18,8 @@ pub struct WebhookWorkerArgs {
     pub price: Option<Decimal>,
     pub image_base64: Option<String>,
     pub is_published: bool,
+    #[serde(default)]
+    pub tax_percent: Option<f64>,
 }
 
 #[async_trait]
@@ -93,6 +95,14 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                     hubo_cambios = true;
                 }
 
+                if let Some(tax) = args.tax_percent {
+                    let decimal_tax = Decimal::new((tax * 100.0).round() as i64, 2).normalize();
+                    if existing_product.tax_percent != Some(decimal_tax) {
+                        active_model.tax_percent = Set(Some(decimal_tax));
+                        hubo_cambios = true;
+                    }
+                }
+
                 if hubo_cambios {
                     active_model.updated_at = Set(chrono::Utc::now().into());
                     active_model.update(&self.ctx.db)
@@ -119,6 +129,7 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                     is_published: Set(args.is_published),
                     created_at: Set(chrono::Utc::now().into()),
                     updated_at: Set(chrono::Utc::now().into()),
+                    tax_percent: Set(args.tax_percent.map(|v| Decimal::new((v * 100.0).round() as i64, 2).normalize())),
                     ..Default::default()
                 };
 
