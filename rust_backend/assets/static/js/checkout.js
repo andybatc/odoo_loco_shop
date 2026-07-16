@@ -36,15 +36,43 @@ const app = Vue.createApp({
         productIds() {
             return this.items.map(i => i.id).join(',');
         },
+        totalTax() {
+            let tax = 0;
+            for (const item of this.items) {
+                if (item.tax_percent) {
+                    const lineTotal = item.price * item.quantity;
+                    const rate = parseFloat(item.tax_percent);
+                    // price includes tax, extract the tax portion
+                    tax += lineTotal - (lineTotal / (1 + rate / 100));
+                }
+            }
+            return tax;
+        },
         totalWithShipping() {
             if (this.noShipping) return this.totalGeneral.toFixed(2);
             const base = this.totalGeneral;
             const ship = this.shippingCost !== null ? parseFloat(this.shippingCost) : 0;
             return (base + ship).toFixed(2);
         },
+        taxLabel() {
+            const rates = new Set();
+            for (const item of this.items) {
+                if (item.tax_percent) rates.add(item.tax_percent);
+            }
+            if (rates.size === 1) {
+                const pct = parseFloat([...rates][0]);
+                return `(${pct}%)`;
+            }
+            return '';
+        },
         noShipping() {
             return this.shippingCost === 0 && (!this.shippingOrigin || this.shippingOrigin.includes('Sin origen'));
         },
+    },
+    mounted() {
+        if (this.customer.country && this.customer.state && this.productIds) {
+            this.estimateShipping();
+        }
     },
     watch: {
         'customer.country': function (newVal, oldVal) {
