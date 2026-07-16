@@ -4,6 +4,7 @@
 
 {% block content %}
 <script id="cart-data" type="application/json">{{ items | json_encode | safe }}</script>
+<script id="cart-user-data" type="application/json">{{ user_data | json_encode | safe }}</script>
 
 <div id="cart-app" class="container mx-auto py-10 px-4" data-total='{{ total }}'>
 
@@ -86,13 +87,19 @@
                     <span>Subtotal</span>
                     <span>$[[ totalGeneral.toFixed(2) ]]</span>
                 </div>
+                <div v-if="totalTax > 0" class="flex justify-between text-sm text-gray-500">
+                    <span>IVA [[ taxLabel ]]</span>
+                    <span>$[[ totalTax.toFixed(2) ]]</span>
+                </div>
                 <div class="flex justify-between text-sm text-gray-500">
-                    <span>Envío</span>
-                    <span class="text-gray-400 italic">A calcular</span>
+                    <span>Envío <small v-if="shippingOrigin && !noShipping" class="text-xs text-gray-400">(desde [[ shippingOrigin ]])</small></span>
+                    <span v-if="shippingCost !== null && !noShipping" class="font-medium">$[[ shippingCost.toFixed(2) ]]</span>
+                    <span v-else-if="noShipping" class="text-red-500 text-xs">No hay envíos configurados</span>
+                    <span v-else class="text-gray-400 italic">A calcular</span>
                 </div>
                 <div class="border-t border-gray-100 pt-4 flex justify-between items-center text-gray-800 font-bold">
                     <span>Total General</span>
-                    <span class="text-2xl text-slate-900">$[[ totalGeneral.toFixed(2) ]]</span>
+                    <span class="text-2xl text-slate-900">$[[ totalWithShipping ]]</span>
                 </div>
             </div>
 
@@ -105,5 +112,5 @@
     </div>
 </div>
 
-<script src="/static/js/cart.js?v=1.2"></script>
+<script src="/static/js/cart.js?v=1.3"></script>
 {% endblock content %}

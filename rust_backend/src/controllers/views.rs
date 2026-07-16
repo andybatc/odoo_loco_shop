@@ -362,6 +362,17 @@ pub async fn cart_display(
         (vec![], 0.0)
     };
 
+    let user_data = user.as_ref().map(|u| serde_json::json!({
+        "name": u.name,
+        "email": u.email,
+        "phone": u.phone,
+        "street": u.street,
+        "city": u.city,
+        "zip": u.zip,
+        "country": u.country,
+        "state": u.state,
+    }));
+
     format::render().view(
         &v,
         "shop/cart.html",
@@ -369,6 +380,7 @@ pub async fn cart_display(
             "items": items,
             "total": total,
             "current_user": user,
+            "user_data": user_data,
         }),
     )
 }
