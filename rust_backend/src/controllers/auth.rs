@@ -1,5 +1,4 @@
 use crate::{
-    controllers::products_webhook::check_rate_limit,
     mailers::auth::AuthMailer,
     models::{
         _entities::users,
@@ -59,9 +58,6 @@ pub(crate) async fn register(
     State(ctx): State<AppContext>,
     Json(params): Json<RegisterParams>,
 ) -> Result<Response> {
-    let ip_key = "rate_limit:register";
-    check_rate_limit(&ctx, ip_key, 5, 60).await?;
-
     let res = users::Model::create_with_password(&ctx.db, &params).await;
 
     let user = match res {
@@ -160,9 +156,6 @@ async fn reset(State(ctx): State<AppContext>, Json(params): Json<ResetParams>) -
 )]
 #[debug_handler]
 pub async fn login(State(ctx): State<AppContext>, Json(params): Json<LoginParams>) -> Result<Response> {
-    let ip_key = "rate_limit:login";
-    check_rate_limit(&ctx, ip_key, 10, 60).await?;
-
     let Ok(user) = users::Model::find_by_email(&ctx.db, &params.email).await else {
         tracing::debug!(
             email = params.email,
@@ -232,9 +225,6 @@ async fn magic_link(
     State(ctx): State<AppContext>,
     Json(params): Json<MagicLinkParams>,
 ) -> Result<Response> {
-    let ip_key = "rate_limit:magic_link";
-    check_rate_limit(&ctx, ip_key, 3, 60).await?;
-
     let email_regex = get_allow_email_domain_re();
     if !email_regex.is_match(&params.email) {
         tracing::debug!(

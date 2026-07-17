@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="cron_retry_webhooks" model="ir.cron">
+        <field name="name">Rust Webhook Queue - Retry Failed</field>
+        <field name="model_id" ref="model_rust_webhook_queue"/>
+        <field name="state">code</field>
+        <field name="code">model.cron_retry_webhooks()</field>
+        <field name="interval_number">5</field>
+        <field name="interval_type">minutes</field>
+        <field name="numbercall">-1</field>
+        <field name="doall">False</field>
+        <field name="active">True</field>
+    </record>
+</odoo>

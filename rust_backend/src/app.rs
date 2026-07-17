@@ -145,6 +145,12 @@ impl Hooks for App {
         use utoipa_swagger_ui::SwaggerUi;
         let router = router.merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", crate::api_docs::ApiDoc::openapi()));
 
+        let app_ctx = AppContext::clone(ctx);
+        let router = router.layer(axum::middleware::from_fn_with_state(
+            app_ctx,
+            middleware::rate_limiter::rate_limit_middleware,
+        ));
+
         Ok(router
             .layer(axum::middleware::from_fn(error_page_middleware))
             .layer(axum::middleware::from_fn(middleware::security_headers::add_security_headers))
