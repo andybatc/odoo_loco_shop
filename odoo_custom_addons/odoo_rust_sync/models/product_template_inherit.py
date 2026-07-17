@@ -89,32 +89,20 @@ class ProductTemplate(models.Model):
         ).rstrip('/')
 
     def _send_rust_webhook(self):
+        """Enqueue webhook instead of direct postcommit"""
         token = self.env['ir.config_parameter'].sudo().get_param('rust_api.webhook_token')
         if not token:
             _logger.warning("⚠️ No se envió el webhook a Rust porque 'rust_api.webhook_token' no está configurado.")
             return
 
-        base_url = self._get_rust_base_url()
-        url = f"{base_url}/api/webhooks/odoo/update"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-
-        payload = self._to_rust_payload()
-
-        _logger.info("🚀 [WEBHOOK ODOO] Datos preparados para enviar -> ID: %s, Name: %s, Price: %s",
-                     payload['odoo_id'], payload['name'], payload['price'])
-
-        def send_after_commit():
-            try:
-                response = requests.post(url, json=payload, headers=headers, timeout=5)
-                if response.status_code != 200:
-                    _logger.warning("⚠️ Rust respondió con código inesperado: %s", response.status_code)
-            except Exception as e:
-                _logger.error("❌ Fallo de conexión tardía con Rust Backend: %s", str(e))
-
-        self.env.cr.postcommit.add(send_after_commit)
+        for record in self:
+            payload = record._to_rust_payload()
+            self.env['rust_webhook.queue'].enqueue(
+                model_name='product.template',
+                res_id=record.id,
+                webhook_type='product_update',
+                payload=payload,
+            )
 
     def action_open_google_maps(self):
         self.ensure_one()

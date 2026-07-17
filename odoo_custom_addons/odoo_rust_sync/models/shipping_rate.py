@@ -1,6 +1,5 @@
 from odoo import fields, models, api
 import logging
-import requests
 
 _logger = logging.getLogger(__name__)
 
@@ -28,41 +27,28 @@ class ShippingRate(models.Model):
             r.display_name = f"{r.origin_state_id.name} → {r.dest_state_id.name}: ${r.amount:.2f}"
 
     def _sync_to_shop(self):
-        shop_url = self.env["ir.config_parameter"].sudo().get_param(
-            "rust_shop_url", "http://localhost:5150"
-        )
+        """Enqueue webhook instead of direct sync"""
         token = self.env["ir.config_parameter"].sudo().get_param("rust_shop_token", "")
         if not token:
             _logger.warning("rust_shop_token no configurado, saltando sync de tarifas")
             return
-        rates_data = [
-            {
-                "origin_country": r.origin_country_id.with_context(lang="en_US").name,
-                "origin_state": r.origin_state_id.name,
-                "dest_country": r.dest_country_id.with_context(lang="en_US").name,
-                "dest_state": r.dest_state_id.name,
-                "amount": r.amount,
+
+        for record in self:
+            payload = {
+                "rates": [{
+                    "origin_country": record.origin_country_id.with_context(lang="en_US").name,
+                    "origin_state": record.origin_state_id.name,
+                    "dest_country": record.dest_country_id.with_context(lang="en_US").name,
+                    "dest_state": record.dest_state_id.name,
+                    "amount": record.amount,
+                }]
             }
-            for r in self
-        ]
-        try:
-            resp = requests.post(
-                f"{shop_url}/api/shipping/rates/sync",
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                },
-                json={"rates": rates_data},
-                timeout=10,
+            self.env['rust_webhook.queue'].enqueue(
+                model_name='shipping.rate',
+                res_id=record.id,
+                webhook_type='shipping_sync',
+                payload=payload,
             )
-            if resp.status_code not in (200, 202):
-                _logger.error(
-                    "Error sync tarifas: HTTP %s - %s", resp.status_code, resp.text[:200]
-                )
-            else:
-                _logger.info("Tarifas sincronizadas con la tienda (%d registros)", len(rates_data))
-        except Exception as e:
-            _logger.error("Error conectando con la tienda: %s", e)
 
     @api.model_create_multi
     def create(self, vals_list):

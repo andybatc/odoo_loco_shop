@@ -5,3 +5,4 @@ from . import res_config_settings_inherit
 from . import payment_provider_inherit
 from . import website_inherit
 from . import shipping_rate
+from . import queue

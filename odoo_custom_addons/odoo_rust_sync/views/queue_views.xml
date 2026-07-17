@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <record id="rust_webhook_queue_tree" model="ir.ui.view">
+        <field name="name">rust_webhook.queue.tree</field>
+        <field name="model">rust_webhook.queue</field>
+        <field name="arch" type="xml">
+            <tree>
+                <field name="webhook_type"/>
+                <field name="model_name"/>
+                <field name="res_id"/>
+                <field name="state"/>
+                <field name="retry_count"/>
+                <field name="last_error"/>
+                <field name="next_retry_at"/>
+                <field name="created_at"/>
+            </tree>
+        </field>
+    </record>
+
+    <record id="rust_webhook_queue_form" model="ir.ui.view">
+        <field name="name">rust_webhook.queue.form</field>
+        <field name="model">rust_webhook.queue</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="webhook_type"/>
+                        <field name="model_name"/>
+                        <field name="res_id"/>
+                        <field name="state"/>
+                        <field name="retry_count"/>
+                        <field name="max_retries"/>
+                        <field name="last_error"/>
+                        <field name="next_retry_at"/>
+                        <field name="created_at"/>
+                    </group>
+                    <group>
+                        <field name="payload" nolabel="1"/>
+                    </group>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="rust_webhook_queue_action" model="ir.actions.act_window">
+        <field name="name">Webhook Queue</field>
+        <field name="res_model">rust_webhook.queue</field>
+        <field name="view_mode">tree,form</field>
+    </record>
+
+    <menuitem id="menu_rust_webhook_queue"
+              name="Webhook Queue"
+              parent="base.menu_custom"
+              action="rust_webhook_queue_action"
+              sequence="10"/>
+</odoo>

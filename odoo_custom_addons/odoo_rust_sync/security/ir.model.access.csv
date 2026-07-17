@@ -1,2 +1,4 @@
 id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
 access_shipping_rate_user,shipping.rate.user,model_shipping_rate,base.group_user,1,1,1,1
+access_rust_webhook_queue_user,rust_webhook.queue.user,model_rust_webhook_queue,base.model_user,1,1,1,1
+access_rust_webhook_queue_admin,rust_webhook.queue.admin,model_rust_webhook_queue,base.group_system,1,1,1,1

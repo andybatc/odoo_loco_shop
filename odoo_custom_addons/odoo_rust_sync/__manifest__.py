@@ -23,10 +23,12 @@ Long description of module's purpose
     # always loaded
     'data': [
         'data/ir_config_parameter_data.xml',
+        'data/cron_data.xml',
         'security/ir.model.access.csv',
         'views/product_webhook_actions.xml',
         'views/shop_sync_views.xml',
         'views/shipping_views.xml',
+        'views/queue_views.xml',
         #'views/templates.xml',
     ],
     # only loaded in demonstration mode

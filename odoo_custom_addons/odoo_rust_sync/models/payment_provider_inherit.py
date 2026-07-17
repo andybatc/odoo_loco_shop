@@ -44,31 +44,20 @@ class PaymentProvider(models.Model):
         ).rstrip('/')
 
     def _send_rust_webhook(self):
+        """Enqueue webhook instead of direct postcommit"""
         token = self.env['ir.config_parameter'].sudo().get_param('rust_api.webhook_token')
         if not token:
             _logger.warning("No webhook_token configurado, omitiendo sync de payment provider")
             return
 
-        base_url = self._get_rust_base_url()
-        url = f"{base_url}/api/webhooks/odoo/payment-methods"
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json"
-        }
-
-        payload = [self._to_rust_payload()]
-
-        def send_after_commit():
-            try:
-                response = requests.post(url, json=payload, headers=headers, timeout=5)
-                if response.status_code != 200:
-                    _logger.warning("Rust respondio %s al sync de payment provider", response.status_code)
-                else:
-                    _logger.info("Payment provider %s sincronizado con Rust", self.name)
-            except Exception as e:
-                _logger.error("Error sync payment provider: %s", str(e))
-
-        self.env.cr.postcommit.add(send_after_commit)
+        for record in self:
+            payload = record._to_rust_payload()
+            self.env['rust_webhook.queue'].enqueue(
+                model_name='payment.provider',
+                res_id=record.id,
+                webhook_type='payment_sync',
+                payload=payload,
+            )
 
     def action_sync_payment_methods(self):
         token = self.env['ir.config_parameter'].sudo().get_param('rust_api.webhook_token')
