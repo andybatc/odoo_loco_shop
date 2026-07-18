@@ -10,7 +10,6 @@ use loco_rs::prelude::*;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
-use axum::extract::Form;
 
 pub static EMAIL_DOMAIN_RE: OnceLock<Regex> = OnceLock::new();
 

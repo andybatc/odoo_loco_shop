@@ -18,7 +18,6 @@ use axum::http::HeaderValue;
 use tower_http::services::ServeDir;
 use tower_http::cors::CorsLayer;
 use tower_http::limit::RequestBodyLimitLayer;
-use loco_rs::prelude::*;
 use utoipa::OpenApi;
 use std::env;
 
@@ -103,7 +102,7 @@ impl Hooks for App {
                     .headers()
                     .get("content-type")
                     .and_then(|v| v.to_str().ok())
-                    .map_or(true, |ct| !ct.starts_with("application/json"))
+                    .is_none_or(|ct| !ct.starts_with("application/json"))
             {
                 if let Ok(body) = std::fs::read_to_string("assets/static/403.html") {
                     return axum::response::Response::builder()

@@ -282,7 +282,7 @@ pub async fn config_page(
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
-    if user.as_ref().map_or(true, |u| u.role != "admin") {
+    if user.as_ref().is_none_or(|u| u.role != "admin") {
         let html = std::fs::read_to_string("assets/static/403.html")
             .map_err(|_| Error::string("Error al cargar la página de acceso denegado"))?;
         let response = Response::builder()
@@ -376,7 +376,7 @@ pub async fn cart_display(
     format::render().view(
         &v,
         "shop/cart.html",
-        &serde_json::json!({
+        serde_json::json!({
             "items": items,
             "total": total,
             "current_user": user,
@@ -400,7 +400,7 @@ async fn handle_config_update(
         .get("cookie")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
-    if user.as_ref().map_or(true, |u| u.role != "admin") {
+    if user.as_ref().is_none_or(|u| u.role != "admin") {
         return Err(Error::Unauthorized("Acceso denegado".to_string()));
     }
 

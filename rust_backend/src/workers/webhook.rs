@@ -49,7 +49,7 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                     }
                     let file_name = format!("{}.webp", uuid::Uuid::new_v4());
                     let file_path = storage_dir.join(&file_name);
-                    if let Ok(_) = tokio::fs::write(file_path, image_bytes).await {
+                    if tokio::fs::write(file_path, image_bytes).await.is_ok() {
                         tracing::info!("💾 Imagen guardada localmente desde Webhook: {}", file_name);
                         guardado_image_filename = Some(file_name);
                     }
@@ -63,7 +63,7 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
             .filter(products::Column::OdooId.eq(Some(args.odoo_id)))
             .one(&self.ctx.db)
             .await
-            .map_err(|e| loco_rs::Error::msg(e))?;
+            .map_err(loco_rs::Error::msg)?;
 
         match local_product {
             // CASO A: El producto existe -> Actualizar campos de forma defensiva
@@ -107,7 +107,7 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
                     active_model.updated_at = Set(chrono::Utc::now().into());
                     active_model.update(&self.ctx.db)
                         .await
-                        .map_err(|e| loco_rs::Error::msg(e))?;
+                        .map_err(loco_rs::Error::msg)?;
                     tracing::info!("💾 ¡Cambios guardados en la Base de Datos!");
 
                     bump_search_version(&self.ctx).await;
@@ -135,7 +135,7 @@ impl BackgroundWorker<WebhookWorkerArgs> for WebhookWorker {
 
                 new_product.insert(&self.ctx.db)
                     .await
-                    .map_err(|e| loco_rs::Error::msg(e))?;
+                    .map_err(loco_rs::Error::msg)?;
 
                 bump_search_version(&self.ctx).await;
                 bump_catalog_version(&self.ctx).await;

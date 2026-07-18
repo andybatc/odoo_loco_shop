@@ -105,7 +105,7 @@ where
 
         let token = crate::models::config_cache::get_cached_config(&ctx, "webhook_token")
             .await
-            .map_err(|e| loco_rs::Error::wrap(e))?
+            .map_err(loco_rs::Error::wrap)?
             .ok_or_else(|| loco_rs::Error::NotFound)?;
 
         if token.as_str() != auth_header {

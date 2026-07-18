@@ -131,7 +131,6 @@ pub async fn add_to_cart(
             cart_id: Set(cart.id),
             product_id: Set(params.product_id),
             quantity: Set(new_qty),
-            ..Default::default()
         };
         new_item.insert(&ctx.db).await?;
     }
@@ -142,7 +141,7 @@ pub async fn add_to_cart(
         "message": "Producto agregado al carrito",
         "cart_id": cart.id
     });
-    let bytes = serde_json::to_vec(&body).map_err(|e| Error::wrap(e))?;
+    let bytes = serde_json::to_vec(&body).map_err(Error::wrap)?;
 
     let mut response_builder = axum::response::Response::builder()
         .header("content-type", "application/json");
@@ -154,7 +153,7 @@ pub async fn add_to_cart(
     }
     response_builder
         .body(axum::body::Body::from(bytes))
-        .map_err(|e| Error::wrap(e))
+        .map_err(Error::wrap)
 }
 
 fn read_cart_cookie(headers: &axum::http::HeaderMap) -> Option<Uuid> {

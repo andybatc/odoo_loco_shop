@@ -15,7 +15,7 @@ use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use loco_rs::prelude::*;
 use sea_orm::ActiveValue::Set;
-use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder, Statement};
+use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::time::Duration;
@@ -174,7 +174,7 @@ pub async fn checkout_page(
     format::render().view(
         &v,
         "shop/checkout.html",
-        &serde_json::json!({
+        serde_json::json!({
             "items": items,
             "total": total,
             "current_user": user,
@@ -466,7 +466,7 @@ pub async fn order_success(
     format::render().view(
         &v,
         "shop/order_success.html",
-        &serde_json::json!({
+        serde_json::json!({
             "order_ref": order_ref,
             "invoice_ref": invoice_ref,
             "total": total,

@@ -95,16 +95,16 @@ impl BackgroundWorker<OrderWorkerArgs> for OrderCreationWorker {
         let delays = [Duration::from_secs(0), Duration::from_secs(30), Duration::from_secs(300)];
         let max_retries = delays.len();
 
-        for attempt in 0..max_retries {
+        for (attempt, delay) in delays.iter().enumerate() {
             if attempt > 0 {
                 tracing::info!("Reintento {} para orden {}", attempt + 1, args.order_id);
-                tokio::time::sleep(delays[attempt]).await;
+                tokio::time::sleep(*delay).await;
             }
 
             let client = reqwest::Client::builder()
                 .timeout(Duration::from_secs(15))
                 .build()
-                .map_err(|e| Error::msg(e))?;
+                .map_err(Error::msg)?;
 
             match client
                 .post(&odoo_url)
