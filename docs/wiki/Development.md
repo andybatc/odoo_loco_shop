@@ -110,6 +110,20 @@ Los tests requieren PostgreSQL y Redis corriendo. Usan la DB configurada en `con
 1. Crear worker en `src/workers/` implementando `BackgroundWorker`
 2. Registrar en `src/app.rs` → `App::connect_workers()`
 
+## Code Quality
+
+Ver [Code Analysis](./Code-Analysis) para herramientas de auditoría de
+vulnerabilidades, licencias, lints y tests.
+
+Antes de commit:
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --all-features --all
+cargo test --all-features --all
+cargo audit
+```
+
 ## Style Guide
 
 - `max_width = 100`, `use_small_heuristics = "Default"` (ver `.rustfmt.toml`)

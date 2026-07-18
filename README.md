@@ -17,7 +17,7 @@ desacoplado en Rust (Loco.rs) con Redis para caché y colas.
 ```bash
 # Opción 1: Docker (recomendado)
 cp .env.example .env
-docker compose up
+docker compose up -d
 # Servidor en http://localhost:5150
 
 # Opción 2: Manual (requiere Rust + PostgreSQL + Redis)
@@ -29,11 +29,8 @@ cargo loco start
 
 Servidor en `http://localhost:5150`. Documentación interactiva de la API en [`http://localhost:5150/swagger-ui`](http://localhost:5150/swagger-ui).
 
-Para levantar también Odoo (con módulos pre-instalados):
-```bash
-docker compose --profile full up
-```
-Odoo disponible en `http://localhost:8069`.
+> **Odoo**: corre externamente (no incluido en docker-compose). Ver
+> [Configuración](#configuración) para detalles de conexión.
 
 ---
 
@@ -51,7 +48,7 @@ Odoo disponible en `http://localhost:8069`.
 - [Configuración](#configuración)
 - [Uso](#uso)
 - [API](#api)
-- [Testing](#testing)
+- [Testing & Code Quality](#testing--code-quality)
 - [Contribuir](#contribuir)
 - [Licencia](#licencia)
 
@@ -187,20 +184,22 @@ cargo loco start
 El servidor arranca en `http://localhost:5150` con migraciones automáticas
 (`auto_migrate: true`).
 
-### Odoo + Docker (recomendado)
+### Odoo (con Docker)
 
-Al usar `docker compose --profile full up`, el servicio Odoo se configura automáticamente:
+Odoo no está incluido en el docker-compose del proyecto. Para ejecutarlo
+con Docker:
 
-1. **Build**: `odoo_custom_addons/Dockerfile` extiende la imagen oficial `odoo:18` e instala la librería Python `requests` (necesaria para los webhooks salientes de `odoo_rust_sync`).
-2. **Montaje de addons**: el directorio `./odoo_custom_addons/` se monta como volumen en `/mnt/extra-addons/` dentro del contenedor. La imagen Odoo incluye ese path en su `--addons-path` por defecto.
-3. **Auto-inicialización**: en el primer arranque, el comando `-d odoo_prod -i muk_web_theme,odoo_rust_sync` crea la base de datos e instala todos los módulos automáticamente.
-4. **Red interna**: Odoo alcanza al backend Rust via `http://rust_backend:5150` (nombre del servicio Docker).
+```bash
+docker run -d -p 8069:8069 --name odoo \
+  -v ./odoo_custom_addons:/mnt/extra-addons \
+  odoo:18 -d odoo_prod -i odoo_rust_sync,muk_web_theme --without-demo=all
+```
 
-```yaml
-# Extracto de docker-compose.yml
-volumes:
-  - ./odoo_custom_addons:/mnt/extra-addons  # addons montados aquí
-command: odoo -d odoo_prod -i odoo_rust_sync,muk_web_theme --without-demo=all
+O usando el Dockerfile incluido en `odoo_custom_addons/`:
+
+```bash
+docker build -t odoo-shop-addons ./odoo_custom_addons
+docker run -d -p 8069:8069 odoo-shop-addons
 ```
 
 ### Addons Odoo (instalación manual, sin Docker)
@@ -370,31 +369,40 @@ curl -X POST http://localhost:5150/api/checkout \
 
 ---
 
-## Testing
+## Testing & Code Quality
 
 ```bash
 cd rust_backend
 
-# Ejecutar todos los tests
+# Tests
 cargo test --all-features --all
 
-# Linter
+# Lints
 cargo clippy --all-features
 
 # Formato
 cargo fmt --all -- --check
+
+# Vulnerabilidades
+cargo audit
+
+# Auditoría completa
+cargo deny check
 ```
 
 Los tests requieren PostgreSQL y Redis corriendo.
+
+> Ver [`docs/code-analysis-tools.md`](docs/code-analysis-tools.md) para la
+> guía completa de herramientas de análisis de código.
 
 ---
 
 ## Contribuir
 
-1. Asegúrate de que `cargo test --all-features --all` pase.
-2. Mantén el estilo: `cargo fmt --all` y `cargo clippy --all-features` sin warnings.
-3. Usa `i32` para IDs de Odoo, `Uuid` para IDs internos.
-4. PRs a la rama `main`. CI valida formato, linter y tests.
+1. `cargo fmt --all`, `cargo clippy --all-features`, `cargo test --all-features --all` y `cargo audit` deben pasar.
+2. Usa `i32` para IDs de Odoo, `Uuid` para IDs internos.
+3. PRs a la rama `main`. CI valida formato, linter y tests.
+4. Ver [`docs/code-analysis-tools.md`](docs/code-analysis-tools.md) para herramientas de calidad.
 
 ## Licencia
 
