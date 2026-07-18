@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  labels:
+    app: odoo-shop
+spec:
+  selector:
+    app: odoo-shop
+    tier: backend
+  ports:
+    - port: 5150
+      targetPort: 5150
+      protocol: TCP
+      name: http

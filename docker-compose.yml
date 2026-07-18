@@ -1,4 +1,42 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: odoo_shop
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-dev_password}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./rust_backend
+    restart: unless-stopped
+    ports:
+      - "5150:5150"
+    environment:
+      DATABASE_URL: postgres://postgres:${DB_PASSWORD:-dev_password}@postgres/odoo_shop
+      REDIS_URL: redis://redis:6379
+      JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
   prometheus:
     image: prom/prometheus:latest
     restart: unless-stopped
@@ -30,5 +68,6 @@ services:
       - --procfs=/host/proc
 
 volumes:
+  pgdata:
   prometheus_data:
   grafana_data:

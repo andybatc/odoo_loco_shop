@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app: odoo-shop
+spec:
+  selector:
+    matchLabels:
+      app: odoo-shop
+      tier: backend
+  template:
+    metadata:
+      labels:
+        app: odoo-shop
+        tier: backend
+    spec:
+      containers:
+        - name: backend
+          image: odoo-shop-backend:latest
+          ports:
+            - containerPort: 5150
+          envFrom:
+            - configMapRef:
+                name: backend-config
+            - secretRef:
+                name: backend-secrets
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 5150
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 5150
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /app/config
+      volumes:
+        - name: config
+          configMap:
+            name: backend-config

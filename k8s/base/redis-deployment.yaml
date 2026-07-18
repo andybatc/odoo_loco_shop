@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: redis
+  labels:
+    app: odoo-shop
+    tier: cache
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: odoo-shop
+      tier: cache
+  template:
+    metadata:
+      labels:
+        app: odoo-shop
+        tier: cache
+    spec:
+      containers:
+        - name: redis
+          image: redis:7-alpine
+          ports:
+            - containerPort: 6379
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10

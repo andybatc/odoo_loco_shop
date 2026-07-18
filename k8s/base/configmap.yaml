@@ -1,0 +1,57 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+data:
+  production.yaml: |
+    logger:
+      enable: true
+      pretty_backtrace: false
+      level: info
+      format: json
+    server:
+      port: 5150
+      binding: 0.0.0.0
+      host: http://localhost
+      middlewares:
+        static:
+          enable: true
+          must_exist: true
+          folder:
+            uri: "/static"
+            path: "assets/static"
+            fallback: "assets/static/404.html"
+        fallback:
+          enable: true
+          code: 404
+          file: "assets/static/404.html"
+    workers:
+      mode: BackgroundQueue
+    queue:
+      kind: Redis
+      uri: {{ get_env(name="REDIS_URL") }}
+      dangerously_flush: false
+    mailer:
+      smtp:
+        enable: true
+        host: {{ get_env(name="SMTP_HOST", default="localhost") }}
+        port: {{ get_env(name="SMTP_PORT", default="1025") }}
+        secure: false
+    database:
+      uri: {{ get_env(name="DATABASE_URL") }}
+      enable_logging: false
+      connect_timeout: 5000
+      idle_timeout: 3600
+      min_connections: 1
+      max_connections: 20
+      auto_migrate: true
+    odoo_database:
+      uri: {{ get_env(name="ODOO_DATABASE_URL") }}
+    auth:
+      jwt:
+        secret: {{ get_env(name="JWT_SECRET") }}
+        expiration: 604800
+    cache:
+      kind: Redis
+      uri: {{ get_env(name="REDIS_URL") }}
+      max_size: 500
