@@ -51,6 +51,10 @@ name = "odoo_shop-cli"
 path = "src/bin/main.rs"
 required-features = []
 
+[patch.crates-io]
+crossbeam-epoch = { path = ".patches/crossbeam-epoch-0.9.20" }
+quick-xml = { path = ".patches/quick-xml-0.41.0" }
+
 [dev-dependencies]
 loco-rs = { workspace = true, features = ["testing"] }
 serial_test = { version = "3.1.1" }
