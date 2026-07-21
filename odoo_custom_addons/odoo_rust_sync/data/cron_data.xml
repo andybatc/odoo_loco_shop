@@ -7,8 +7,6 @@
         <field name="code">model.cron_retry_webhooks()</field>
         <field name="interval_number">5</field>
         <field name="interval_type">minutes</field>
-        <field name="numbercall">-1</field>
-        <field name="doall">False</field>
         <field name="active">True</field>
     </record>
 </odoo>

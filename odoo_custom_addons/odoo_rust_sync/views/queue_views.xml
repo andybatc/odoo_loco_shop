@@ -4,7 +4,7 @@
         <field name="name">rust_webhook.queue.tree</field>
         <field name="model">rust_webhook.queue</field>
         <field name="arch" type="xml">
-            <tree>
+            <list>
                 <field name="webhook_type"/>
                 <field name="model_name"/>
                 <field name="res_id"/>
@@ -13,7 +13,7 @@
                 <field name="last_error"/>
                 <field name="next_retry_at"/>
                 <field name="created_at"/>
-            </tree>
+            </list>
         </field>
     </record>
 
@@ -45,7 +45,7 @@
     <record id="rust_webhook_queue_action" model="ir.actions.act_window">
         <field name="name">Webhook Queue</field>
         <field name="res_model">rust_webhook.queue</field>
-        <field name="view_mode">tree,form</field>
+        <field name="view_mode">list,form</field>
     </record>
 
     <menuitem id="menu_rust_webhook_queue"

@@ -18,6 +18,7 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
+use std::str::FromStr;
 use std::time::Duration;
 use utoipa::ToSchema;
 
@@ -620,26 +621,178 @@ pub async fn order_success(
     Query(params): Query<std::collections::HashMap<String, String>>,
     headers: HeaderMap,
     State(ctx): State<AppContext>,
-) -> Result<Response> {
+    jar: CookieJar,
+) -> Result<(CookieJar, Response)> {
     let cookie_header = headers
         .get("cookie")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
     let user = get_current_user(&ctx, cookie_header).await;
 
+    // Stripe callback flow
+    if let Some(session_id) = params.get("session_id") {
+        // 1. Verify the Stripe session
+        let secret_key = crate::models::config_cache::get_cached_config(&ctx, "stripe_secret_key")
+            .await?.unwrap_or_default();
+        if secret_key.is_empty() || secret_key == "No configurado" {
+            return Err(Error::string("Stripe no configurado"));
+        }
+
+        let client = stripe::Client::new(&secret_key);
+        let sid = stripe::CheckoutSessionId::from_str(session_id)
+            .map_err(|_| Error::BadRequest("ID de sesión inválido".to_string()))?;
+
+        let session = stripe::CheckoutSession::retrieve(&client, &sid, &[]).await.map_err(|e| {
+            tracing::error!("Stripe session retrieve error: {:?}", e);
+            Error::string("Error al verificar el pago")
+        })?;
+
+        if session.payment_status != stripe::CheckoutSessionPaymentStatus::Paid {
+            return Err(Error::BadRequest("El pago no fue completado".to_string()));
+        }
+
+        // 2. Retrieve checkout data from Redis
+        let redis_key = format!("stripe:session:{}", session_id);
+        let checkout_data: Option<serde_json::Value> = ctx.cache.get(&redis_key).await.ok().flatten();
+        let checkout_data = checkout_data.ok_or_else(|| {
+            Error::BadRequest("Sesión expirada. Por favor, intente nuevamente.".to_string())
+        })?;
+
+        let cart_uuid_str = checkout_data["cart_uuid"].as_str().unwrap_or("");
+        let cart_uuid = Uuid::parse_str(cart_uuid_str)
+            .map_err(|_| Error::BadRequest("Datos de sesión inválidos".to_string()))?;
+
+        // 3. Check if already processed (cart already cleared)
+        let product_items = cart_items::Entity::find()
+            .filter(cart_items::Column::CartId.eq(cart_uuid))
+            .all(&ctx.db).await?;
+
+        if product_items.is_empty() {
+            // Already processed — show existing order data
+            return Ok((jar, format::render().view(
+                &v, "shop/order_success.html",
+                serde_json::json!({
+                    "order_ref": session_id,
+                    "invoice_ref": "",
+                    "total": "0.00",
+                    "current_user": user,
+                    "already_processed": true,
+                }),
+            )?));
+        }
+
+        // 4. Rebuild order data from stored checkout info
+        let customer = &checkout_data["customer"];
+        let mut pids = Vec::new();
+        let mut item_qty = std::collections::HashMap::new();
+        for item in &product_items {
+            pids.push(item.product_id);
+            item_qty.insert(item.product_id, item.quantity);
+        }
+
+        let db_products = products::Entity::find()
+            .filter(products::Column::Id.is_in(pids))
+            .all(&ctx.db).await?;
+
+        // Recalculate total
+        let shipping_key = format!("stripe:shipping:{}", session_id);
+        let shipping_data: Option<serde_json::Value> = ctx.cache.get(&shipping_key).await.ok().flatten();
+        let shipping_cost: sea_orm::prelude::Decimal = shipping_data
+            .and_then(|v| v["cost"].as_str()?.parse::<f64>().ok())
+            .map(|v| sea_orm::prelude::Decimal::try_from(v).unwrap_or_default())
+            .unwrap_or_default();
+
+        let mut total = shipping_cost;
+        for prod in &db_products {
+            let qty = *item_qty.get(&prod.id).unwrap_or(&1);
+            let price = prod.price.unwrap_or_default();
+            total += price * sea_orm::prelude::Decimal::from(qty as i64);
+        }
+        let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
+
+        // 5. Create order
+        let order_id = Uuid::new_v4();
+        let order = orders_entity::ActiveModel {
+            id: Set(order_id),
+            user_id: Set(user.as_ref().map(|u| u.id)),
+            customer_name: Set(customer["name"].as_str().unwrap_or("").to_string()),
+            customer_email: Set(customer["email"].as_str().unwrap_or("").to_string()),
+            customer_phone: Set(customer["phone"].as_str().map(|s| s.to_string())),
+            customer_street: Set(customer["street"].as_str().map(|s| s.to_string())),
+            customer_city: Set(customer["city"].as_str().map(|s| s.to_string())),
+            customer_zip: Set(customer["zip"].as_str().map(|s| s.to_string())),
+            customer_country: Set(customer["country"].as_str().map(|s| s.to_string())),
+            customer_state: Set(customer["state"].as_str().map(|s| s.to_string())),
+            shipping_cost: Set(Some(shipping_cost)),
+            total: Set(total),
+            status: Set("paid".to_string()),
+            ..Default::default()
+        };
+        order.insert(&ctx.db).await?;
+
+        // 6. Create order items
+        let order_items_to_insert: Vec<order_items::ActiveModel> = db_products.iter().map(|prod| {
+            let qty = *item_qty.get(&prod.id).unwrap_or(&1);
+            let price = prod.price.unwrap_or_default();
+            let subtotal = price * sea_orm::prelude::Decimal::from(qty as i64);
+            order_items::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                order_id: Set(order_id),
+                product_id: Set(prod.id),
+                product_name: Set(prod.name.clone().unwrap_or_else(|| "Product".to_string())),
+                price: Set(price),
+                quantity: Set(qty),
+                subtotal: Set(subtotal),
+                ..Default::default()
+            }
+        }).collect();
+        order_items::Entity::insert_many(order_items_to_insert).exec(&ctx.db).await?;
+
+        // 7. Dispatch Odoo sync
+        let worker_args = crate::workers::order_creation::OrderWorkerArgs { order_id };
+        crate::workers::order_creation::OrderCreationWorker::perform_later(&ctx, worker_args).await?;
+
+        // 8. Clear cart
+        cart_items::Entity::delete_many()
+            .filter(cart_items::Column::CartId.eq(cart_uuid))
+            .exec(&ctx.db).await?;
+        carts::Entity::delete_by_id(cart_uuid).exec(&ctx.db).await?;
+
+        // 9. Clean up Redis
+        let _ = ctx.cache.delete(&redis_key).await;
+        let _ = ctx.cache.delete(&shipping_key).await;
+
+        // 10. Remove guest cart cookie
+        let jar = jar.remove(Cookie::new("rsv_cart_session", ""));
+
+        return Ok((jar, format::render().view(
+            &v, "shop/order_success.html",
+            serde_json::json!({
+                "order_ref": order_id.to_string(),
+                "invoice_ref": "",
+                "total": format!("{:.2}", total_f64),
+                "current_user": user,
+                "already_processed": false,
+            }),
+        )?));
+    }
+
+    // Existing non-Stripe flow
     let order_ref = params.get("ref").cloned().unwrap_or_default();
     let invoice_ref = params.get("inv").cloned().unwrap_or_default();
     let total = params.get("total").cloned().unwrap_or_else(|| "0.00".to_string());
 
-    format::render().view(
-        &v,
-        "shop/order_success.html",
+    let response = format::render().view(
+        &v, "shop/order_success.html",
         serde_json::json!({
             "order_ref": order_ref,
             "invoice_ref": invoice_ref,
             "total": total,
             "current_user": user,
+            "already_processed": false,
         }),
-    )
+    )?;
+
+    Ok((jar, response))
 }
 
 #[derive(Serialize)]
