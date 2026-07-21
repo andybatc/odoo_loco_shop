@@ -45,6 +45,7 @@ utoipa-swagger-ui = { version = "9.0", features = ["axum"] }
 audit = "0.7.3"
 axum-prometheus = "0.9"
 redis = "0.31"
+async-stripe = { version = "=1.0.0-rc.6", default-features = false, features = ["runtime-tokio-hyper-rustls"] }
 
 [[bin]]
 name = "odoo_shop-cli"

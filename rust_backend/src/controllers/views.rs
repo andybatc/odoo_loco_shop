@@ -2,7 +2,7 @@
 #![allow(clippy::unnecessary_struct_initialization)]
 #![allow(clippy::unused_async)]
 use crate::controllers::auth as auth_controller;
-use crate::models::_entities::{users, configs, carts, orders as orders_entity};
+use crate::models::_entities::{users, configs, carts, cart_items, orders as orders_entity};
 use crate::models::cart_helpers;
 use crate::models::config_cache;
 use crate::models::users::LoginParams;
@@ -14,6 +14,8 @@ use loco_rs::controller::views::engines::TeraView;
 use loco_rs::controller::views::ViewEngine;
 use loco_rs::prelude::Json;
 use loco_rs::prelude::*;
+use sea_orm::ActiveValue::Set;
+use sea_orm::QueryFilter;
 use serde::{Deserialize, Serialize};
 use axum_extra::extract::cookie::{Cookie, CookieJar};
 use regex::Regex;
@@ -89,19 +91,13 @@ async fn login_display(State(ctx): State<AppContext>, headers: HeaderMap) -> Res
 
 async fn login_web(
     State(ctx): State<AppContext>,
-    Form(params): Form<LoginParams>, // Recibimos el Formulario del HTML
+    headers: HeaderMap,
+    Form(params): Form<LoginParams>,
 ) -> Result<Response> {
     // --- EL PUENTE ---
-    // Convertimos el Form<LoginParams> en Json<LoginParams> para dárselo a Loco
     let login_json = Json(params);
-
-    // Llamamos directamente a la función 'login' del controlador de Loco
     let api_response = auth_controller::login(State(ctx.clone()), login_json).await?;
 
-    // --- PROCESAR LA RESPUESTA DE LOCO ---
-    // Si llegamos aquí, el login fue exitoso (Loco devolvió un Ok)
-    // Extraemos el cuerpo de la respuesta para obtener el Token
-    // Nota: Loco devuelve LoginResponse en formato JSON
     let body_bytes = axum::body::to_bytes(api_response.into_body(), 1024 * 10)
         .await
         .map_err(|_| Error::string("Error al leer respuesta de autenticación"))?;
@@ -109,19 +105,105 @@ async fn login_web(
     let login_res: LoginResponse = serde_json::from_slice(&body_bytes)
         .map_err(|_| Error::string("Error al procesar respuesta de autenticación"))?;
 
-    // --- MANEJO DE COOKIES ---
+    if let Ok(user_id) = Uuid::parse_str(&login_res.pid) {
+        if let Some(guest_id) = read_guest_cart_cookie(&headers) {
+            tracing::info!("login_web: merging guest cart {} into user {}", guest_id, user_id);
+            merge_guest_cart_into_user(&ctx, guest_id, user_id).await?;
+        }
+    }
+
     let jwt_config = ctx.config.get_jwt_config()?;
-    let cookie = format!(
+    let token_cookie = format!(
         "token={}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
         login_res.token, jwt_config.expiration
     );
+    let clear_guest_cookie = "rsv_cart_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0";
 
-    // Respondemos al navegador
     Response::builder()
-        .header("Set-Cookie", cookie)
+        .header("Set-Cookie", token_cookie)
+        .header("Set-Cookie", clear_guest_cookie)
         .header("HX-Redirect", "/")
         .body(axum::body::Body::empty())
         .map_err(|_| Error::string("Error al generar respuesta de autenticación"))
+}
+
+fn read_guest_cart_cookie(headers: &HeaderMap) -> Option<Uuid> {
+    let cookie_str = headers.get("cookie")?.to_str().ok()?;
+    let found = cookie_str
+        .split(';')
+        .find(|s| s.trim().starts_with("rsv_cart_session="))?;
+    let val = found.split('=').nth(1)?;
+    Uuid::parse_str(val.trim()).ok()
+}
+
+async fn merge_guest_cart_into_user(
+    ctx: &AppContext,
+    guest_cart_id: Uuid,
+    user_id: Uuid,
+) -> std::result::Result<(), Error> {
+    let guest_cart = match carts::Entity::find_by_id(guest_cart_id).one(&ctx.db).await? {
+        Some(c) => c,
+        None => return Ok(()),
+    };
+
+    let user_cart = carts::Entity::find()
+        .filter(carts::Column::UserId.eq(user_id))
+        .one(&ctx.db)
+        .await?;
+
+    match user_cart {
+        Some(uc) => {
+            let guest_items = cart_items::Entity::find()
+                .filter(cart_items::Column::CartId.eq(guest_cart_id))
+                .all(&ctx.db)
+                .await?;
+
+            for item in guest_items {
+                let existing = cart_items::Entity::find()
+                    .filter(cart_items::Column::CartId.eq(uc.id))
+                    .filter(cart_items::Column::ProductId.eq(item.product_id))
+                    .one(&ctx.db)
+                    .await?;
+
+                if let Some(e) = existing {
+                    let qty = e.quantity;
+                    let mut active: cart_items::ActiveModel = e.into();
+                    active.quantity = Set(qty + item.quantity);
+                    active.update(&ctx.db).await?;
+                } else {
+                    cart_items::ActiveModel {
+                        id: Set(Uuid::new_v4()),
+                        cart_id: Set(uc.id),
+                        product_id: Set(item.product_id),
+                        quantity: Set(item.quantity),
+                    }
+                    .insert(&ctx.db)
+                    .await?;
+                }
+            }
+
+            carts::Entity::delete_by_id(guest_cart_id)
+                .exec(&ctx.db)
+                .await?;
+            tracing::info!(
+                "merge_guest_cart: merged guest {} into user cart {}, guest deleted",
+                guest_cart_id,
+                uc.id
+            );
+        }
+        None => {
+            let mut active: carts::ActiveModel = guest_cart.into();
+            active.user_id = Set(Some(user_id));
+            active.update(&ctx.db).await?;
+            tracing::info!(
+                "merge_guest_cart: assigned guest cart {} to user {}",
+                guest_cart_id,
+                user_id
+            );
+        }
+    }
+
+    Ok(())
 }
 
 async fn register_display() -> Result<Response> {
@@ -237,6 +319,7 @@ pub struct ConfigUpdateForm {
     pub odoo_url: Option<String>,
     pub shipping_default_rate: Option<String>,
     pub shipping_local_rate: Option<String>,
+    pub stripe_secret_key: Option<String>,
 }
 
 pub async fn config_page(
@@ -277,6 +360,14 @@ pub async fn config_page(
         })?
         .unwrap_or_else(|| "0.00".to_string());
 
+    let stripe_secret_key = config_cache::get_cached_config(&ctx, "stripe_secret_key")
+        .await
+        .map_err(|e| {
+            tracing::error!("Error consultando cache: {:?}", e);
+            Error::string("Error al conectar con la base de datos")
+        })?
+        .unwrap_or_else(|| "No configurado".to_string());
+
     let cookie_header = headers
         .get("cookie")
         .and_then(|h| h.to_str().ok().map(|s| s.to_string()));
@@ -310,6 +401,7 @@ pub async fn config_page(
             "odoo_base_url": odoo_url_value,
             "shipping_default_rate": shipping_default_rate,
             "shipping_local_rate": shipping_local_rate,
+            "stripe_secret_key": stripe_secret_key,
             "csrf_token": csrf_token,
         }),
     )?;
@@ -506,6 +598,30 @@ async fn handle_config_update(
                 .await?;
             }
             config_cache::invalidate_config_cache(&ctx, "shipping_local_rate").await;
+        }
+    }
+
+    if let Some(ref key) = payload.stripe_secret_key {
+        if !key.is_empty() && key.len() < 8 {
+            return Err(Error::BadRequest("stripe_secret_key must be at least 8 characters".to_string()));
+        }
+        if !key.is_empty() {
+            let config = configs::Entity::find()
+                .filter(configs::Column::Key.eq("stripe_secret_key"))
+                .one(&ctx.db)
+                .await?;
+            if let Some(c) = config {
+                let mut active_model: configs::ActiveModel = c.into();
+                active_model.value = Set(Some(key.clone()));
+                active_model.update(&ctx.db).await?;
+            } else {
+                configs::ActiveModel {
+                    key: Set(Some("stripe_secret_key".to_string())),
+                    value: Set(Some(key.clone())),
+                    ..Default::default()
+                }.insert(&ctx.db).await?;
+            }
+            config_cache::invalidate_config_cache(&ctx, "stripe_secret_key").await;
         }
     }
 
