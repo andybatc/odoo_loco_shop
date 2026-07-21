@@ -17,7 +17,7 @@ use loco_rs::prelude::*;
 use sea_orm::ActiveValue::Set;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::time::Duration;
 use utoipa::ToSchema;
 
@@ -448,6 +448,173 @@ pub(crate) async fn submit_checkout(
     ))
 }
 
+#[debug_handler]
+pub(crate) async fn create_stripe_session(
+    State(ctx): State<AppContext>,
+    headers: HeaderMap,
+    Json(params): Json<CheckoutRequest>,
+) -> Result<Json<StripeSessionResponse>> {
+    // Validate email
+    let email_re = regex::Regex::new(r"^[^\s@]+@[^\s@]+\.[^\s@]+$").unwrap();
+    if !email_re.is_match(&params.customer.email) {
+        return Ok(Json(StripeSessionResponse {
+            success: false, url: None, error: Some("Email inválido".to_string()),
+        }));
+    }
+    if params.customer.name.trim().is_empty() {
+        return Ok(Json(StripeSessionResponse {
+            success: false, url: None, error: Some("El nombre es obligatorio".to_string()),
+        }));
+    }
+
+    // Get cart (same as submit_checkout)
+    let cart_uuid = {
+        let user = get_current_user(&ctx, headers.get("cookie").and_then(|h| h.to_str().ok()).map(|s| s.to_string())).await;
+        if let Some(ref u) = user {
+            let cart = carts::Entity::find()
+                .filter(carts::Column::UserId.eq(u.pid))
+                .one(&ctx.db).await?;
+            match cart {
+                Some(c) => c.id,
+                None => return Ok(Json(StripeSessionResponse {
+                    success: false, url: None, error: Some("Carrito no encontrado".to_string()),
+                })),
+            }
+        } else {
+            let cookie_val = headers.get("cookie")
+                .and_then(|h| h.to_str().ok())
+                .and_then(|s| s.split(';').find(|p| p.trim().starts_with("rsv_cart_session=")))
+                .and_then(|s| s.split('=').nth(1).map(|v| v.trim().to_string()));
+            match cookie_val.and_then(|v| Uuid::parse_str(&v).ok()) {
+                Some(id) => id,
+                None => return Ok(Json(StripeSessionResponse {
+                    success: false, url: None, error: Some("Carrito no encontrado".to_string()),
+                })),
+            }
+        }
+    };
+
+    // Load cart items
+    let items = cart_items::Entity::find()
+        .filter(cart_items::Column::CartId.eq(cart_uuid))
+        .all(&ctx.db).await?;
+    if items.is_empty() {
+        return Ok(Json(StripeSessionResponse {
+            success: false, url: None, error: Some("El carrito está vacío".to_string()),
+        }));
+    }
+
+    let mut product_ids = Vec::new();
+    let mut item_map = HashMap::new();
+    for item in &items {
+        product_ids.push(item.product_id);
+        item_map.insert(item.product_id, item.quantity);
+    }
+
+    let db_products = products::Entity::find()
+        .filter(products::Column::Id.is_in(product_ids))
+        .all(&ctx.db).await?;
+
+    // Build Stripe line items (price_data with inline product)
+    let mut stripe_line_items = Vec::new();
+    for prod in &db_products {
+        let qty = *item_map.get(&prod.id).unwrap_or(&1) as u64;
+        let price_cents = prod.price
+            .map(|p| (p.to_string().parse::<f64>().unwrap_or(0.0) * 100.0).round() as i64)
+            .unwrap_or(0);
+        let name = prod.name.clone().unwrap_or_else(|| "Producto".to_string());
+
+        stripe_line_items.push(stripe::CreateCheckoutSessionLineItems {
+            quantity: Some(qty),
+            price_data: Some(stripe::CreateCheckoutSessionLineItemsPriceData {
+                currency: stripe::Currency::MXN,
+                product_data: Some(stripe::CreateCheckoutSessionLineItemsPriceDataProductData {
+                    name: Some(&name),
+                    ..Default::default()
+                }),
+                unit_amount: Some(price_cents),
+                ..Default::default()
+            }),
+            ..Default::default()
+        });
+    }
+
+    // Get Stripe secret key
+    let secret_key = crate::models::config_cache::get_cached_config(&ctx, "stripe_secret_key")
+        .await?.unwrap_or_default();
+    if secret_key.is_empty() || secret_key == "No configurado" {
+        return Ok(Json(StripeSessionResponse {
+            success: false, url: None, error: Some("Stripe no configurado".to_string()),
+        }));
+    }
+
+    // Create Stripe CheckoutSession
+    let client = stripe::Client::new(&secret_key);
+    let mut metadata = std::collections::HashMap::new();
+    metadata.insert("cart_uuid".to_string(), cart_uuid.to_string());
+    metadata.insert("payment_method_id".to_string(), params.payment_method_id.unwrap_or(0).to_string());
+
+    let base_url = crate::models::config_cache::get_cached_config(&ctx, "odoo_base_url")
+        .await?.unwrap_or_else(|| "http://localhost:5150".to_string());
+
+    let session_params = stripe::CreateCheckoutSession {
+        mode: Some(stripe::CheckoutSessionMode::Payment),
+        success_url: Some(&format!("{}/order/success?session_id={{CHECKOUT_SESSION_ID}}", base_url)),
+        cancel_url: Some(&format!("{}/checkout", base_url)),
+        line_items: Some(stripe_line_items),
+        customer_email: Some(&params.customer.email),
+        metadata: Some(metadata),
+        ..Default::default()
+    };
+
+    let session = stripe::CheckoutSession::create(&client, session_params).await.map_err(|e| {
+        tracing::error!("Stripe session creation error: {:?}", e);
+        Error::string(format!("Error al crear sesión de pago: {}", e))
+    })?;
+
+    let session_url = session.url.ok_or_else(|| {
+        tracing::error!("Stripe session created without URL");
+        Error::string("Error al crear sesión de pago")
+    })?;
+
+    // Store checkout data in Redis for the callback
+    let checkout_data = serde_json::json!({
+        "cart_uuid": cart_uuid,
+        "customer": {
+            "name": params.customer.name,
+            "email": params.customer.email,
+            "phone": params.customer.phone,
+            "street": params.customer.street,
+            "city": params.customer.city,
+            "zip": params.customer.zip,
+            "country": params.customer.country,
+            "state": params.customer.state,
+        },
+        "payment_method_id": params.payment_method_id,
+    });
+    let _ = ctx.cache.insert_with_expiry(
+        &format!("stripe:session:{}", session.id.as_ref()),
+        &checkout_data,
+        std::time::Duration::from_secs(3600),
+    ).await;
+
+    // Store shipping cost separately
+    let dest_country = params.customer.country.as_deref().unwrap_or("");
+    let dest_state = params.customer.state.as_deref().unwrap_or("");
+    let (shipping_cost, _) = calc_shipping(&ctx.db, &db_products, dest_country, dest_state).await?;
+    let _ = ctx.cache.insert_with_expiry(
+        &format!("stripe:shipping:{}", session.id.as_ref()),
+        &serde_json::json!({ "cost": shipping_cost.to_string() }),
+        std::time::Duration::from_secs(3600),
+    ).await;
+
+    Ok(Json(StripeSessionResponse {
+        success: true,
+        url: Some(session_url),
+        error: None,
+    }))
+}
+
 pub async fn order_success(
     ViewEngine(v): ViewEngine<TeraView>,
     Query(params): Query<std::collections::HashMap<String, String>>,
@@ -475,9 +642,17 @@ pub async fn order_success(
     )
 }
 
+#[derive(Serialize)]
+pub struct StripeSessionResponse {
+    pub success: bool,
+    pub url: Option<String>,
+    pub error: Option<String>,
+}
+
 pub fn routes() -> Routes {
     Routes::new()
         .add("/checkout", get(checkout_page))
         .add("/api/checkout", post(submit_checkout))
+        .add("/api/checkout/stripe-session", post(create_stripe_session))
         .add("/order/success", get(order_success))
 }
