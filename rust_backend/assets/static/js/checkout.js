@@ -109,7 +109,15 @@ const app = Vue.createApp({
                 if (this.selectedPaymentId) {
                     body.payment_method_id = this.selectedPaymentId;
                 }
-                const response = await fetch('/api/checkout', {
+
+                // Check if selected method is Stripe
+                const selectedMethod = this.paymentMethods.find(
+                    pm => pm.odoo_provider_id === this.selectedPaymentId
+                );
+                const isStripe = selectedMethod && selectedMethod.code === 'stripe';
+
+                const endpoint = isStripe ? '/api/checkout/stripe-session' : '/api/checkout';
+                const response = await fetch(endpoint, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(body),
@@ -118,12 +126,18 @@ const app = Vue.createApp({
                 const data = await response.json();
 
                 if (data.success) {
-                    const params = new URLSearchParams({
-                        ref: data.order_name || '',
-                        inv: data.invoice_name || '',
-                        total: this.totalGeneral.toFixed(2),
-                    });
-                    window.location.href = '/order/success?' + params.toString();
+                    if (isStripe && data.url) {
+                        // Stripe: redirect directly to Stripe Checkout
+                        window.location.href = data.url;
+                    } else {
+                        // Non-Stripe: existing flow
+                        const params = new URLSearchParams({
+                            ref: data.order_name || '',
+                            inv: data.invoice_name || '',
+                            total: this.totalGeneral.toFixed(2),
+                        });
+                        window.location.href = '/order/success?' + params.toString();
+                    }
                 } else {
                     this.errorMessage = data.error || 'Error al procesar el pedido';
                 }
