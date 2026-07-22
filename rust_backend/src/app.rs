@@ -66,6 +66,7 @@ impl Hooks for App {
             .add_route(controllers::shop::routes())
             .add_route(controllers::auth::routes())
             .add_route(controllers::admin::routes())
+            .add_route(controllers::stripe_webhooks::routes())
             .add_route(controllers::shipping::routes())
     }
     async fn after_routes(router: Router, ctx: &AppContext) -> Result<Router> {

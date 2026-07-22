@@ -10,4 +10,5 @@ pub mod admin;
 pub mod checkout;
 pub mod payment_webhooks;
 pub mod stripe_config;
+pub mod stripe_webhooks;
 pub mod shipping;

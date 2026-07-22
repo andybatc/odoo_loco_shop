@@ -7,6 +7,7 @@ use crate::models::_entities::{cart_items, carts, order_items, products, shippin
 use crate::models::_entities::orders as orders_entity;
 use crate::models::_entities::payment_methods as payment_methods_entity;
 use crate::models::cart_helpers;
+use crate::models::config_cache;
 use crate::workers::order_creation::{OrderCreationWorker, OrderWorkerArgs};
 use axum::extract::Query;
 use axum::http::HeaderMap;
@@ -657,6 +658,206 @@ pub(crate) async fn create_stripe_session(
     }))
 }
 
+/// Process a confirmed paid Stripe Checkout session.
+/// Returns (order_id, total_f64, already_processed).
+/// Idempotent: safe to call multiple times for the same session.
+/// Shared between redirect callback and webhook handler.
+pub(crate) async fn process_paid_session(
+    ctx: &AppContext,
+    session_id: &str,
+    user: Option<users::Model>,
+) -> Result<(Uuid, f64, bool)> {
+    let secret_key = config_cache::get_cached_config(ctx, "stripe_secret_key")
+        .await?.unwrap_or_default();
+    if secret_key.is_empty() || secret_key == "No configurado" {
+        return Err(Error::string("Stripe no configurado"));
+    }
+
+    let http_client = reqwest::Client::new();
+    let resp = http_client
+        .get(format!("https://api.stripe.com/v1/checkout/sessions/{}", session_id))
+        .header("Authorization", format!("Bearer {}", secret_key))
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!("Stripe HTTP error: {:?}", e);
+            Error::string("Error de conexión con Stripe")
+        })?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        tracing::error!("Stripe retrieve error: {}", body);
+        return Err(Error::BadRequest("Error al verificar el pago en Stripe".to_string()));
+    }
+
+    let session: serde_json::Value = resp.json().await.map_err(|e| {
+        tracing::error!("Stripe response parse error: {:?}", e);
+        Error::string("Error al procesar respuesta de Stripe")
+    })?;
+
+    if session["payment_status"].as_str() != Some("paid") {
+        return Err(Error::BadRequest("El pago no fue completado".to_string()));
+    }
+
+    // Retrieve checkout data from Redis
+    let redis_key = format!("stripe:session:{}", session_id);
+    let checkout_data: Option<serde_json::Value> = ctx.cache.get(&redis_key).await.ok().flatten();
+    let checkout_data = match checkout_data {
+        Some(d) => d,
+        None => {
+            tracing::warn!("Checkout data expired for session {}", session_id);
+            return Err(Error::BadRequest(
+                "Sesión expirada. Por favor, intente nuevamente.".to_string(),
+            ));
+        }
+    };
+
+    // Check if already processed via Redis marker (atomic)
+    let order_key = format!("stripe:order:{}", session_id);
+    if let Ok(Some(_)) = ctx.cache.get::<String>(&order_key).await {
+        tracing::info!("Stripe session {} already processed, skipping", session_id);
+        return Ok((Uuid::default(), 0.0, true));
+    }
+
+    let cart_uuid_str = checkout_data["cart_uuid"].as_str().unwrap_or("");
+    let cart_uuid = Uuid::parse_str(cart_uuid_str)
+        .map_err(|_| Error::BadRequest("Datos de sesión inválidos".to_string()))?;
+
+    // Secondary check: cart already cleared (fallback if Redis marker expired)
+    let product_items = cart_items::Entity::find()
+        .filter(cart_items::Column::CartId.eq(cart_uuid))
+        .all(&ctx.db)
+        .await?;
+
+    if product_items.is_empty() {
+        tracing::warn!(
+            "Cart already cleared for session {}, treating as already processed",
+            session_id
+        );
+        return Ok((Uuid::default(), 0.0, true));
+    }
+
+    // Rebuild order data from stored checkout info
+    let customer = &checkout_data["customer"];
+    let mut pids = Vec::new();
+    let mut item_qty = std::collections::HashMap::new();
+    for item in &product_items {
+        pids.push(item.product_id);
+        item_qty.insert(item.product_id, item.quantity);
+    }
+
+    let db_products = products::Entity::find()
+        .filter(products::Column::Id.is_in(pids))
+        .all(&ctx.db)
+        .await?;
+
+    // Recalculate total
+    let shipping_key = format!("stripe:shipping:{}", session_id);
+    let shipping_data: Option<serde_json::Value> =
+        ctx.cache.get(&shipping_key).await.ok().flatten();
+    let shipping_cost: sea_orm::prelude::Decimal = shipping_data
+        .and_then(|v| v["cost"].as_str()?.parse::<f64>().ok())
+        .map(|v| sea_orm::prelude::Decimal::try_from(v).unwrap_or_default())
+        .unwrap_or_default();
+
+    let mut total = shipping_cost;
+    for prod in &db_products {
+        let qty = *item_qty.get(&prod.id).unwrap_or(&1);
+        let price = prod.price.unwrap_or_default();
+        total += price * sea_orm::prelude::Decimal::from(qty as i64);
+    }
+    let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
+
+    // Verify Stripe-collected amount matches expected
+    let expected_cents = (total_f64 * 100.0).round() as i64;
+    if let Some(actual_cents) = session["amount_total"].as_i64() {
+        if actual_cents != expected_cents {
+            tracing::error!(
+                "Stripe amount mismatch: expected {} cents, got {} (session: {})",
+                expected_cents,
+                actual_cents,
+                session_id
+            );
+            return Err(Error::BadRequest(
+                "Monto del pago no coincide con el esperado".to_string(),
+            ));
+        }
+    }
+
+    // Create order
+    let order_id = Uuid::new_v4();
+    let order = orders_entity::ActiveModel {
+        id: Set(order_id),
+        user_id: Set(user.as_ref().map(|u| u.id)),
+        customer_name: Set(customer["name"].as_str().unwrap_or("").to_string()),
+        customer_email: Set(customer["email"].as_str().unwrap_or("").to_string()),
+        customer_phone: Set(customer["phone"].as_str().map(|s| s.to_string())),
+        customer_street: Set(customer["street"].as_str().map(|s| s.to_string())),
+        customer_city: Set(customer["city"].as_str().map(|s| s.to_string())),
+        customer_zip: Set(customer["zip"].as_str().map(|s| s.to_string())),
+        customer_country: Set(customer["country"].as_str().map(|s| s.to_string())),
+        customer_state: Set(customer["state"].as_str().map(|s| s.to_string())),
+        shipping_cost: Set(Some(shipping_cost)),
+        total: Set(total),
+        status: Set("paid".to_string()),
+        ..Default::default()
+    };
+    order.insert(&ctx.db).await?;
+
+    // Mark as processed in Redis (atomic idempotency guard)
+    let _ = ctx
+        .cache
+        .insert_with_expiry(
+            &format!("stripe:order:{}", session_id),
+            &order_id.to_string(),
+            std::time::Duration::from_secs(3600),
+        )
+        .await;
+
+    // Create order items
+    let order_items_to_insert: Vec<order_items::ActiveModel> = db_products
+        .iter()
+        .map(|prod| {
+            let qty = *item_qty.get(&prod.id).unwrap_or(&1);
+            let price = prod.price.unwrap_or_default();
+            let subtotal = price * sea_orm::prelude::Decimal::from(qty as i64);
+            order_items::ActiveModel {
+                id: Set(Uuid::new_v4()),
+                order_id: Set(order_id),
+                product_id: Set(prod.id),
+                product_name: Set(prod.name.clone().unwrap_or_else(|| "Product".to_string())),
+                price: Set(price),
+                quantity: Set(qty),
+                subtotal: Set(subtotal),
+                ..Default::default()
+            }
+        })
+        .collect();
+    order_items::Entity::insert_many(order_items_to_insert)
+        .exec(&ctx.db)
+        .await?;
+
+    // Dispatch Odoo sync
+    let worker_args = crate::workers::order_creation::OrderWorkerArgs { order_id };
+    crate::workers::order_creation::OrderCreationWorker::perform_later(ctx, worker_args)
+        .await?;
+
+    // Clear cart
+    cart_items::Entity::delete_many()
+        .filter(cart_items::Column::CartId.eq(cart_uuid))
+        .exec(&ctx.db)
+        .await?;
+    carts::Entity::delete_by_id(cart_uuid).exec(&ctx.db).await?;
+
+    // Clean up Redis
+    let _ = ctx.cache.remove(&redis_key).await;
+    let _ = ctx.cache.remove(&shipping_key).await;
+
+    tracing::info!("Order {} created from Stripe session {}", order_id, session_id);
+
+    Ok((order_id, total_f64, false))
+}
+
 pub async fn order_success(
     ViewEngine(v): ViewEngine<TeraView>,
     Query(params): Query<std::collections::HashMap<String, String>>,
@@ -671,192 +872,24 @@ pub async fn order_success(
 
     // Stripe callback flow
     if let Some(session_id) = params.get("session_id") {
-        // 1. Verify the Stripe session
-        let secret_key = crate::models::config_cache::get_cached_config(&ctx, "stripe_secret_key")
-            .await?.unwrap_or_default();
-        if secret_key.is_empty() || secret_key == "No configurado" {
-            return Err(Error::string("Stripe no configurado"));
-        }
+        let (order_id, total_f64, already_processed) =
+            process_paid_session(&ctx, session_id, user.clone()).await?;
 
-        let http_client = reqwest::Client::new();
-        let resp = http_client
-            .get(format!("https://api.stripe.com/v1/checkout/sessions/{}", session_id))
-            .header("Authorization", format!("Bearer {}", secret_key))
-            .send()
-            .await
-            .map_err(|e| {
-                tracing::error!("Stripe HTTP error: {:?}", e);
-                Error::string("Error de conexión con Stripe")
-            })?;
-
-        if !resp.status().is_success() {
-            let body = resp.text().await.unwrap_or_default();
-            tracing::error!("Stripe retrieve error: {}", body);
-            return Err(Error::BadRequest("Error al verificar el pago en Stripe".to_string()));
-        }
-
-        let session: serde_json::Value = resp.json().await.map_err(|e| {
-            tracing::error!("Stripe response parse error: {:?}", e);
-            Error::string("Error al procesar respuesta de Stripe")
-        })?;
-
-        if session["payment_status"].as_str() != Some("paid") {
-            return Err(Error::BadRequest("El pago no fue completado".to_string()));
-        }
-
-        // 2. Retrieve checkout data from Redis
-        let redis_key = format!("stripe:session:{}", session_id);
-        let checkout_data: Option<serde_json::Value> = ctx.cache.get(&redis_key).await.ok().flatten();
-        let checkout_data = checkout_data.ok_or_else(|| {
-            Error::BadRequest("Sesión expirada. Por favor, intente nuevamente.".to_string())
-        })?;
-
-        // 3. Check if already processed via Redis marker (atomic)
-        let order_key = format!("stripe:order:{}", session_id);
-        if let Ok(Some(order_id_str)) = ctx.cache.get::<String>(&order_key).await {
-            return Ok((jar, format::render().view(
-                &v, "shop/order_success.html",
-                serde_json::json!({
-                    "order_ref": order_id_str,
-                    "invoice_ref": "",
-                    "total": "0.00",
-                    "current_user": user,
-                    "already_processed": true,
-                }),
-            )?));
-        }
-
-        let cart_uuid_str = checkout_data["cart_uuid"].as_str().unwrap_or("");
-        let cart_uuid = Uuid::parse_str(cart_uuid_str)
-            .map_err(|_| Error::BadRequest("Datos de sesión inválidos".to_string()))?;
-
-        // 3a. Secondary check: cart already cleared (fallback if Redis marker expired)
-        let product_items = cart_items::Entity::find()
-            .filter(cart_items::Column::CartId.eq(cart_uuid))
-            .all(&ctx.db).await?;
-
-        if product_items.is_empty() {
-            // Already processed — show existing order data
-            return Ok((jar, format::render().view(
-                &v, "shop/order_success.html",
-                serde_json::json!({
-                    "order_ref": session_id,
-                    "invoice_ref": "",
-                    "total": "0.00",
-                    "current_user": user,
-                    "already_processed": true,
-                }),
-            )?));
-        }
-
-        // 4. Rebuild order data from stored checkout info
-        let customer = &checkout_data["customer"];
-        let mut pids = Vec::new();
-        let mut item_qty = std::collections::HashMap::new();
-        for item in &product_items {
-            pids.push(item.product_id);
-            item_qty.insert(item.product_id, item.quantity);
-        }
-
-        let db_products = products::Entity::find()
-            .filter(products::Column::Id.is_in(pids))
-            .all(&ctx.db).await?;
-
-        // Recalculate total
-        let shipping_key = format!("stripe:shipping:{}", session_id);
-        let shipping_data: Option<serde_json::Value> = ctx.cache.get(&shipping_key).await.ok().flatten();
-        let shipping_cost: sea_orm::prelude::Decimal = shipping_data
-            .and_then(|v| v["cost"].as_str()?.parse::<f64>().ok())
-            .map(|v| sea_orm::prelude::Decimal::try_from(v).unwrap_or_default())
-            .unwrap_or_default();
-
-        let mut total = shipping_cost;
-        for prod in &db_products {
-            let qty = *item_qty.get(&prod.id).unwrap_or(&1);
-            let price = prod.price.unwrap_or_default();
-            total += price * sea_orm::prelude::Decimal::from(qty as i64);
-        }
-        let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
-
-        // Verify Stripe-collected amount matches expected
-        let expected_cents = (total_f64 * 100.0).round() as i64;
-        if let Some(actual_cents) = session["amount_total"].as_i64() {
-            if actual_cents != expected_cents {
-                tracing::error!("Stripe amount mismatch: expected {} cents, got {} (session: {})", expected_cents, actual_cents, session_id);
-                return Err(Error::BadRequest("Monto del pago no coincide con el esperado".to_string()));
-            }
-        }
-
-        // 5. Create order
-        let order_id = Uuid::new_v4();
-        let order = orders_entity::ActiveModel {
-            id: Set(order_id),
-            user_id: Set(user.as_ref().map(|u| u.id)),
-            customer_name: Set(customer["name"].as_str().unwrap_or("").to_string()),
-            customer_email: Set(customer["email"].as_str().unwrap_or("").to_string()),
-            customer_phone: Set(customer["phone"].as_str().map(|s| s.to_string())),
-            customer_street: Set(customer["street"].as_str().map(|s| s.to_string())),
-            customer_city: Set(customer["city"].as_str().map(|s| s.to_string())),
-            customer_zip: Set(customer["zip"].as_str().map(|s| s.to_string())),
-            customer_country: Set(customer["country"].as_str().map(|s| s.to_string())),
-            customer_state: Set(customer["state"].as_str().map(|s| s.to_string())),
-            shipping_cost: Set(Some(shipping_cost)),
-            total: Set(total),
-            status: Set("paid".to_string()),
-            ..Default::default()
+        let jar = if already_processed {
+            jar
+        } else {
+            jar.remove(Cookie::new("rsv_cart_session", ""))
         };
-        order.insert(&ctx.db).await?;
-
-        // Mark as processed in Redis (atomic idempotency guard)
-        let _ = ctx.cache.insert_with_expiry(
-            &format!("stripe:order:{}", session_id),
-            &order_id.to_string(),
-            std::time::Duration::from_secs(3600),
-        ).await;
-
-        // 6. Create order items
-        let order_items_to_insert: Vec<order_items::ActiveModel> = db_products.iter().map(|prod| {
-            let qty = *item_qty.get(&prod.id).unwrap_or(&1);
-            let price = prod.price.unwrap_or_default();
-            let subtotal = price * sea_orm::prelude::Decimal::from(qty as i64);
-            order_items::ActiveModel {
-                id: Set(Uuid::new_v4()),
-                order_id: Set(order_id),
-                product_id: Set(prod.id),
-                product_name: Set(prod.name.clone().unwrap_or_else(|| "Product".to_string())),
-                price: Set(price),
-                quantity: Set(qty),
-                subtotal: Set(subtotal),
-                ..Default::default()
-            }
-        }).collect();
-        order_items::Entity::insert_many(order_items_to_insert).exec(&ctx.db).await?;
-
-        // 7. Dispatch Odoo sync
-        let worker_args = crate::workers::order_creation::OrderWorkerArgs { order_id };
-        crate::workers::order_creation::OrderCreationWorker::perform_later(&ctx, worker_args).await?;
-
-        // 8. Clear cart
-        cart_items::Entity::delete_many()
-            .filter(cart_items::Column::CartId.eq(cart_uuid))
-            .exec(&ctx.db).await?;
-        carts::Entity::delete_by_id(cart_uuid).exec(&ctx.db).await?;
-
-        // 9. Clean up Redis
-        let _ = ctx.cache.remove(&redis_key).await;
-        let _ = ctx.cache.remove(&shipping_key).await;
-
-        // 10. Remove guest cart cookie
-        let jar = jar.remove(Cookie::new("rsv_cart_session", ""));
 
         return Ok((jar, format::render().view(
-            &v, "shop/order_success.html",
+            &v,
+            "shop/order_success.html",
             serde_json::json!({
                 "order_ref": order_id.to_string(),
                 "invoice_ref": "",
                 "total": format!("{:.2}", total_f64),
                 "current_user": user,
-                "already_processed": false,
+                "already_processed": already_processed,
             }),
         )?));
     }
