@@ -18,7 +18,6 @@ use sea_orm::ActiveValue::Set;
 use sea_orm::{ColumnTrait, EntityTrait, QueryFilter, QueryOrder};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap};
-use std::str::FromStr;
 use std::time::Duration;
 use utoipa::ToSchema;
 
@@ -516,8 +515,26 @@ pub(crate) async fn create_stripe_session(
         .filter(products::Column::Id.is_in(product_ids))
         .all(&ctx.db).await?;
 
-    // Build Stripe line items (price_data with inline product)
-    let mut stripe_line_items = Vec::new();
+    // Calculate shipping with local delivery override (same logic as submit_checkout)
+    let dest_country = params.customer.country.as_deref().unwrap_or("");
+    let dest_state = params.customer.state.as_deref().unwrap_or("");
+    let (mut shipping_cost, _) = calc_shipping(&ctx.db, &db_products, dest_country, dest_state).await?;
+    let all_local = db_products.iter().all(|p| {
+        p.warehouse_country.as_deref() == Some(dest_country)
+            && p.warehouse_state.as_deref() == Some(dest_state)
+    });
+    if all_local && !dest_country.is_empty() {
+        let local_rate = crate::models::config_cache::get_cached_config(&ctx, "shipping_local_rate")
+            .await.unwrap_or(None)
+            .and_then(|v| v.parse::<f64>().ok())
+            .map(sea_orm::prelude::Decimal::try_from)
+            .and_then(Result::ok)
+            .unwrap_or(sea_orm::prelude::Decimal::ZERO);
+        if local_rate > sea_orm::prelude::Decimal::ZERO { shipping_cost = local_rate; }
+    }
+
+    // Build Stripe line items
+    let mut stripe_line_items: Vec<serde_json::Value> = Vec::new();
     for prod in &db_products {
         let qty = *item_map.get(&prod.id).unwrap_or(&1) as u64;
         let price_cents = prod.price
@@ -525,19 +542,27 @@ pub(crate) async fn create_stripe_session(
             .unwrap_or(0);
         let name = prod.name.clone().unwrap_or_else(|| "Producto".to_string());
 
-        stripe_line_items.push(stripe::CreateCheckoutSessionLineItems {
-            quantity: Some(qty),
-            price_data: Some(stripe::CreateCheckoutSessionLineItemsPriceData {
-                currency: stripe::Currency::MXN,
-                product_data: Some(stripe::CreateCheckoutSessionLineItemsPriceDataProductData {
-                    name: Some(&name),
-                    ..Default::default()
-                }),
-                unit_amount: Some(price_cents),
-                ..Default::default()
-            }),
-            ..Default::default()
-        });
+        stripe_line_items.push(serde_json::json!({
+            "quantity": qty,
+            "price_data": {
+                "currency": "mxn",
+                "product_data": { "name": name },
+                "unit_amount": price_cents,
+            }
+        }));
+    }
+
+    // Add shipping as a Stripe line item
+    if shipping_cost > sea_orm::prelude::Decimal::ZERO {
+        let shipping_cents = shipping_cost.to_string().parse::<f64>().unwrap_or(0.0) * 100.0;
+        stripe_line_items.push(serde_json::json!({
+            "quantity": 1,
+            "price_data": {
+                "currency": "mxn",
+                "product_data": { "name": "Envío" },
+                "unit_amount": shipping_cents.round() as i64,
+            }
+        }));
     }
 
     // Get Stripe secret key
@@ -549,34 +574,53 @@ pub(crate) async fn create_stripe_session(
         }));
     }
 
-    // Create Stripe CheckoutSession
-    let client = stripe::Client::new(&secret_key);
-    let mut metadata = std::collections::HashMap::new();
-    metadata.insert("cart_uuid".to_string(), cart_uuid.to_string());
-    metadata.insert("payment_method_id".to_string(), params.payment_method_id.unwrap_or(0).to_string());
-
     let base_url = crate::models::config_cache::get_cached_config(&ctx, "odoo_base_url")
         .await?.unwrap_or_else(|| "http://localhost:5150".to_string());
 
-    let session_params = stripe::CreateCheckoutSession {
-        mode: Some(stripe::CheckoutSessionMode::Payment),
-        success_url: Some(&format!("{}/order/success?session_id={{CHECKOUT_SESSION_ID}}", base_url)),
-        cancel_url: Some(&format!("{}/checkout", base_url)),
-        line_items: Some(stripe_line_items),
-        customer_email: Some(&params.customer.email),
-        metadata: Some(metadata),
-        ..Default::default()
-    };
+    let session_params = serde_json::json!({
+        "mode": "payment",
+        "success_url": format!("{}/order/success?session_id={{CHECKOUT_SESSION_ID}}", base_url),
+        "cancel_url": format!("{}/checkout", base_url),
+        "line_items": stripe_line_items,
+        "customer_email": params.customer.email,
+        "metadata": {
+            "cart_uuid": cart_uuid.to_string(),
+            "payment_method_id": params.payment_method_id.unwrap_or(0).to_string(),
+        },
+    });
 
-    let session = stripe::CheckoutSession::create(&client, session_params).await.map_err(|e| {
-        tracing::error!("Stripe session creation error: {:?}", e);
-        Error::string(format!("Error al crear sesión de pago: {}", e))
+    let http_client = reqwest::Client::new();
+    let resp = http_client
+        .post("https://api.stripe.com/v1/checkout/sessions")
+        .header("Authorization", format!("Bearer {}", secret_key))
+        .json(&session_params)
+        .send()
+        .await
+        .map_err(|e| {
+            tracing::error!("Stripe HTTP error: {:?}", e);
+            Error::string("Error de conexión con Stripe")
+        })?;
+
+    if !resp.status().is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        tracing::error!("Stripe API error: {}", body);
+        return Err(Error::string("Error al crear sesión de pago en Stripe"));
+    }
+
+    let session: serde_json::Value = resp.json().await.map_err(|e| {
+        tracing::error!("Stripe response parse error: {:?}", e);
+        Error::string("Error al procesar respuesta de Stripe")
     })?;
 
-    let session_url = session.url.ok_or_else(|| {
-        tracing::error!("Stripe session created without URL");
+    let session_url = session["url"].as_str().ok_or_else(|| {
+        tracing::error!("Stripe session created without URL: {:?}", session);
         Error::string("Error al crear sesión de pago")
-    })?;
+    })?.to_string();
+
+    let session_id = session["id"].as_str().unwrap_or("");
+    if session_id.is_empty() {
+        return Err(Error::string("Error: sesión Stripe sin ID"));
+    }
 
     // Store checkout data in Redis for the callback
     let checkout_data = serde_json::json!({
@@ -594,17 +638,14 @@ pub(crate) async fn create_stripe_session(
         "payment_method_id": params.payment_method_id,
     });
     let _ = ctx.cache.insert_with_expiry(
-        &format!("stripe:session:{}", session.id.as_ref()),
+        &format!("stripe:session:{}", session_id),
         &checkout_data,
         std::time::Duration::from_secs(3600),
     ).await;
 
-    // Store shipping cost separately
-    let dest_country = params.customer.country.as_deref().unwrap_or("");
-    let dest_state = params.customer.state.as_deref().unwrap_or("");
-    let (shipping_cost, _) = calc_shipping(&ctx.db, &db_products, dest_country, dest_state).await?;
+    // Store shipping cost in Redis for the callback
     let _ = ctx.cache.insert_with_expiry(
-        &format!("stripe:shipping:{}", session.id.as_ref()),
+        &format!("stripe:shipping:{}", session_id),
         &serde_json::json!({ "cost": shipping_cost.to_string() }),
         std::time::Duration::from_secs(3600),
     ).await;
@@ -637,16 +678,29 @@ pub async fn order_success(
             return Err(Error::string("Stripe no configurado"));
         }
 
-        let client = stripe::Client::new(&secret_key);
-        let sid = stripe::CheckoutSessionId::from_str(session_id)
-            .map_err(|_| Error::BadRequest("ID de sesión inválido".to_string()))?;
+        let http_client = reqwest::Client::new();
+        let resp = http_client
+            .get(format!("https://api.stripe.com/v1/checkout/sessions/{}", session_id))
+            .header("Authorization", format!("Bearer {}", secret_key))
+            .send()
+            .await
+            .map_err(|e| {
+                tracing::error!("Stripe HTTP error: {:?}", e);
+                Error::string("Error de conexión con Stripe")
+            })?;
 
-        let session = stripe::CheckoutSession::retrieve(&client, &sid, &[]).await.map_err(|e| {
-            tracing::error!("Stripe session retrieve error: {:?}", e);
-            Error::string("Error al verificar el pago")
+        if !resp.status().is_success() {
+            let body = resp.text().await.unwrap_or_default();
+            tracing::error!("Stripe retrieve error: {}", body);
+            return Err(Error::BadRequest("Error al verificar el pago en Stripe".to_string()));
+        }
+
+        let session: serde_json::Value = resp.json().await.map_err(|e| {
+            tracing::error!("Stripe response parse error: {:?}", e);
+            Error::string("Error al procesar respuesta de Stripe")
         })?;
 
-        if session.payment_status != stripe::CheckoutSessionPaymentStatus::Paid {
+        if session["payment_status"].as_str() != Some("paid") {
             return Err(Error::BadRequest("El pago no fue completado".to_string()));
         }
 
@@ -657,11 +711,26 @@ pub async fn order_success(
             Error::BadRequest("Sesión expirada. Por favor, intente nuevamente.".to_string())
         })?;
 
+        // 3. Check if already processed via Redis marker (atomic)
+        let order_key = format!("stripe:order:{}", session_id);
+        if let Ok(Some(order_id_str)) = ctx.cache.get::<String>(&order_key).await {
+            return Ok((jar, format::render().view(
+                &v, "shop/order_success.html",
+                serde_json::json!({
+                    "order_ref": order_id_str,
+                    "invoice_ref": "",
+                    "total": "0.00",
+                    "current_user": user,
+                    "already_processed": true,
+                }),
+            )?));
+        }
+
         let cart_uuid_str = checkout_data["cart_uuid"].as_str().unwrap_or("");
         let cart_uuid = Uuid::parse_str(cart_uuid_str)
             .map_err(|_| Error::BadRequest("Datos de sesión inválidos".to_string()))?;
 
-        // 3. Check if already processed (cart already cleared)
+        // 3a. Secondary check: cart already cleared (fallback if Redis marker expired)
         let product_items = cart_items::Entity::find()
             .filter(cart_items::Column::CartId.eq(cart_uuid))
             .all(&ctx.db).await?;
@@ -709,6 +778,15 @@ pub async fn order_success(
         }
         let total_f64 = total.to_string().parse::<f64>().unwrap_or(0.0);
 
+        // Verify Stripe-collected amount matches expected
+        let expected_cents = (total_f64 * 100.0).round() as i64;
+        if let Some(actual_cents) = session["amount_total"].as_i64() {
+            if actual_cents != expected_cents {
+                tracing::error!("Stripe amount mismatch: expected {} cents, got {} (session: {})", expected_cents, actual_cents, session_id);
+                return Err(Error::BadRequest("Monto del pago no coincide con el esperado".to_string()));
+            }
+        }
+
         // 5. Create order
         let order_id = Uuid::new_v4();
         let order = orders_entity::ActiveModel {
@@ -728,6 +806,13 @@ pub async fn order_success(
             ..Default::default()
         };
         order.insert(&ctx.db).await?;
+
+        // Mark as processed in Redis (atomic idempotency guard)
+        let _ = ctx.cache.insert_with_expiry(
+            &format!("stripe:order:{}", session_id),
+            &order_id.to_string(),
+            std::time::Duration::from_secs(3600),
+        ).await;
 
         // 6. Create order items
         let order_items_to_insert: Vec<order_items::ActiveModel> = db_products.iter().map(|prod| {
@@ -758,8 +843,8 @@ pub async fn order_success(
         carts::Entity::delete_by_id(cart_uuid).exec(&ctx.db).await?;
 
         // 9. Clean up Redis
-        let _ = ctx.cache.delete(&redis_key).await;
-        let _ = ctx.cache.delete(&shipping_key).await;
+        let _ = ctx.cache.remove(&redis_key).await;
+        let _ = ctx.cache.remove(&shipping_key).await;
 
         // 10. Remove guest cart cookie
         let jar = jar.remove(Cookie::new("rsv_cart_session", ""));
