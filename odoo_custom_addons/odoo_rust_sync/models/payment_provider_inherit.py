@@ -15,6 +15,11 @@ class PaymentProvider(models.Model):
         if any(f in vals for f in sync_fields):
             for record in self:
                 record._send_rust_webhook()
+        # If Stripe secret key changed, send config webhook
+        if 'stripe_secret_key' in vals:
+            for record in self:
+                if record.code == 'stripe' and vals.get('stripe_secret_key'):
+                    record._send_stripe_config_webhook()
         return res
 
     @api.model_create_multi
@@ -58,6 +63,25 @@ class PaymentProvider(models.Model):
                 webhook_type='payment_sync',
                 payload=payload,
             )
+
+    def _send_stripe_config_webhook(self):
+        """Enqueue a stripe_config webhook with the secret key"""
+        token = self.env['ir.config_parameter'].sudo().get_param('rust_api.webhook_token')
+        if not token:
+            _logger.warning("No webhook_token configurado, omitiendo sync de stripe config")
+            return
+
+        secret_key = self.sudo().stripe_secret_key
+        if not secret_key:
+            _logger.warning("Stripe provider sin stripe_secret_key, omitiendo sync")
+            return
+
+        self.env['rust_webhook.queue'].enqueue(
+            model_name='payment.provider',
+            res_id=self.id,
+            webhook_type='stripe_config',
+            payload={'stripe_secret_key': secret_key},
+        )
 
     def action_sync_payment_methods(self):
         token = self.env['ir.config_parameter'].sudo().get_param('rust_api.webhook_token')

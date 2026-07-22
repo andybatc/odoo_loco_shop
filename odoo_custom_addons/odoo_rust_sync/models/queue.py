@@ -18,6 +18,7 @@ class RustWebhookQueue(models.Model):
         ('product_update', 'Product Update'),
         ('payment_sync', 'Payment Sync'),
         ('shipping_sync', 'Shipping Rate Sync'),
+        ('stripe_config', 'Stripe Config'),
     ], string='Webhook Type', required=True)
     payload = fields.Text(string='Payload (JSON)', required=True)
     state = fields.Selection([
@@ -45,6 +46,7 @@ class RustWebhookQueue(models.Model):
             'product_update': '/api/webhooks/odoo/update',
             'payment_sync': '/api/webhooks/odoo/payment-methods',
             'shipping_sync': '/api/shipping/rates/sync',
+            'stripe_config': '/api/webhooks/odoo/stripe-config',
         }
         return base_url + urls.get(self.webhook_type, '')
 

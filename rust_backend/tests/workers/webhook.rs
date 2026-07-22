@@ -20,7 +20,8 @@ async fn test_run_webhook_worker() {
                 name:Some("Individual Workplace".to_string()),
                 price:Some(Decimal::from_str_radix("150.50", 10).unwrap()),
                 image_base64:None,
-                is_published: true
+                is_published: true,
+                tax_percent: None
             }
         )
             .await
